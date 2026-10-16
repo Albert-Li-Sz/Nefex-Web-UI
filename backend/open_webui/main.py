@@ -171,7 +171,6 @@ from open_webui.routers import (
     models,
     notes,
     notifications,
-    ollama,
     openai,
     pipelines,
     prompts,
@@ -359,7 +358,7 @@ https://github.com/open-webui/open-webui
         # LICENSE covers this Open WebUI CLI identifier.
         # Do not alter, remove, obscure, or replace it except as LICENSE permits:
         # https://docs.openwebui.com/license.
-        print(f'Open WebUI v{VERSION} - building the best AI user interface.\nhttps://github.com/open-webui/open-webui')
+        print(f'{WEBUI_NAME} v{VERSION}\nhttps://github.com/Albert-Li-Sz/Nefex-Web-UI')
 
 
 @asynccontextmanager
@@ -539,7 +538,7 @@ apply_orjson_http_json()
 # Do not alter, remove, obscure, or replace it except as LICENSE permits:
 # https://docs.openwebui.com/license.
 app = FastAPI(
-    title='Open WebUI',
+    title=WEBUI_NAME,
     docs_url='/docs' if ENV == 'dev' else None,
     openapi_url='/openapi.json' if ENV == 'dev' else None,
     redoc_url=None,
@@ -587,15 +586,6 @@ if ENABLE_OTEL:
 
     setup_opentelemetry(app=app, db_engine=engine)
 
-
-########################################
-#
-# OLLAMA
-#
-########################################
-
-
-app.state.OLLAMA_MODELS = {}
 
 ########################################
 #
@@ -733,10 +723,8 @@ async def initialize_runtime_config(app: FastAPI):
         'rag.embedding_engine',
         'rag.embedding_model',
         'rag.openai.api_base_url',
-        'rag.ollama.base_url',
         'rag.azure_openai.base_url',
         'rag.openai.api_key',
-        'rag.ollama.api_key',
         'rag.azure_openai.api_key',
         'rag.embedding_batch_size',
         'rag.azure_openai.api_version',
@@ -754,20 +742,12 @@ async def initialize_runtime_config(app: FastAPI):
         url=(
             rag_config.get('rag.openai.api_base_url')
             if embedding_engine == 'openai'
-            else (
-                rag_config.get('rag.ollama.base_url')
-                if embedding_engine == 'ollama'
-                else rag_config.get('rag.azure_openai.base_url')
-            )
+            else rag_config.get('rag.azure_openai.base_url')
         ),
         key=(
             rag_config.get('rag.openai.api_key')
             if embedding_engine == 'openai'
-            else (
-                rag_config.get('rag.ollama.api_key')
-                if embedding_engine == 'ollama'
-                else rag_config.get('rag.azure_openai.api_key')
-            )
+            else rag_config.get('rag.azure_openai.api_key')
         ),
         embedding_batch_size=rag_config.get('rag.embedding_batch_size'),
         azure_api_version=(
@@ -873,7 +853,6 @@ app.add_middleware(
 app.mount('/ws', socket_app)
 
 
-app.include_router(ollama.router, prefix='/ollama', tags=['ollama'])
 app.include_router(openai.router, prefix='/openai', tags=['openai'])
 
 
@@ -994,66 +973,19 @@ async def unload_model(request: Request, form_data: ModelUnloadForm, user=Depend
     """
     Unified model unload endpoint.
     Resolves the provider that owns the model and calls its native unload mechanism.
-    Supports: Ollama (keep_alive=0) and llama.cpp (/models/unload).
+    Supports: llama.cpp and OpenAI-compatible providers (/models/unload).
     """
     model_id = form_data.model
 
-    ollama_models = getattr(request.app.state, 'OLLAMA_MODELS', None) or {}
     openai_models = getattr(request.app.state, 'OPENAI_MODELS', None) or {}
 
     seen = set()
-    while model_id not in ollama_models and model_id not in openai_models and model_id not in seen:
+    while model_id not in openai_models and model_id not in seen:
         seen.add(model_id)
         model_info = await Models.get_model_by_id(model_id)
         if not model_info or not model_info.base_model_id:
             break
         model_id = model_info.base_model_id
-
-    # --- Ollama provider ---
-    if model_id in ollama_models:
-        ollama_config = await Config.get_many('ollama.base_urls', 'ollama.api_configs')
-        ollama_base_urls = ollama_config.get('ollama.base_urls') or []
-        ollama_api_configs = ollama_config.get('ollama.api_configs') or {}
-        url_indices = ollama_models[model_id].get('urls', [])
-        errors = []
-        for idx in url_indices:
-            url = ollama_base_urls[idx]
-            api_config = ollama_api_configs.get(
-                str(idx),
-                ollama_api_configs.get(url, {}),
-            )
-            key = api_config.get('key', None)
-
-            prefix_id = api_config.get('prefix_id', None)
-            actual_model = strip_provider_model_prefix(model_id, prefix_id)
-
-            payload = JSONCodec.dumps({'model': actual_model, 'keep_alive': 0, 'prompt': ''})
-
-            try:
-                timeout = aiohttp.ClientTimeout(total=30)
-                async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
-                    headers, cookies = await get_headers_and_cookies(request, url, key, api_config, user=user)
-                    async with session.post(
-                        f'{url}/api/generate',
-                        data=payload,
-                        headers=headers,
-                        cookies=cookies,
-                        ssl=AIOHTTP_CLIENT_SESSION_SSL,
-                    ) as r:
-                        if not r.ok:
-                            errors.append({'url_idx': idx, 'error': await r.text()})
-            except Exception as e:
-                log.exception(f'Failed to unload model on Ollama node {idx}: {e}')
-                errors.append({'url_idx': idx, 'error': str(e)})
-
-        await ollama.clear_models_cache(request)
-
-        if errors:
-            raise HTTPException(
-                status_code=500,
-                detail=f'Failed to unload model on {len(errors)} node(s): {errors}',
-            )
-        return {'status': True}
 
     # --- OpenAI-compatible providers ---
     if model_id in openai_models:
@@ -1115,7 +1047,7 @@ async def embeddings(request: Request, form_data: dict, user=Depends(get_verifie
 
     This handler:
       - Performs user/model checks and dispatches to the correct backend.
-      - Supports OpenAI, Ollama, arena models, pipelines, and any compatible provider.
+      - Supports OpenAI, arena models, pipelines, and any compatible provider.
 
     Args:
         request (Request): Request context.
@@ -2690,7 +2622,7 @@ async def get_app_latest_release_version(user=Depends(get_verified_user)):
         timeout = aiohttp.ClientTimeout(total=1)
         async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
             async with session.get(
-                'https://api.github.com/repos/open-webui/open-webui/releases/latest',
+                'https://api.github.com/repos/Albert-Li-Sz/Nefex-Web-UI/releases/latest',
                 ssl=AIOHTTP_CLIENT_SESSION_SSL,
             ) as response:
                 response.raise_for_status()

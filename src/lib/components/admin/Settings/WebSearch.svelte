@@ -18,7 +18,6 @@
 	export let saveHandler: Function;
 
 	let webSearchEngines = [
-		'ollama_cloud',
 		'perplexity_search',
 		'searxng',
 		'yacy',
@@ -235,25 +234,7 @@
 				</AdminSettingRow>
 
 				{#if webConfig.WEB_SEARCH_ENGINE !== ''}
-					{#if webConfig.WEB_SEARCH_ENGINE === 'ollama_cloud'}
-						<div class="mb-2.5 flex w-full flex-col">
-							<div>
-								<div class=" self-center text-xs text-gray-600 dark:text-gray-400 mb-1">
-									{$i18n.t('settings.admin.web.ollamaCloudApiKey.label')}
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<SensitiveInput
-											variant="settings"
-											placeholder={$i18n.t('Enter Ollama Cloud API Key')}
-											bind:value={webConfig.OLLAMA_CLOUD_WEB_SEARCH_API_KEY}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-					{:else if webConfig.WEB_SEARCH_ENGINE === 'perplexity_search'}
+					{#if webConfig.WEB_SEARCH_ENGINE === 'perplexity_search'}
 						<div class="mb-2.5 flex w-full flex-col">
 							<div>
 								<div class=" self-center text-xs text-gray-600 dark:text-gray-400 mb-1">

@@ -1,5 +1,5 @@
 {
-	"name": "open-webui",
+	"name": "nefex-web-ui",
 	"version": "0.12.3",
 	"private": true,
 	"scripts": {
@@ -24,7 +24,8 @@
 		"i18n:parse": "i18next --config i18next-parser.config.ts && prettier --write \"src/lib/i18n/**/*.{js,json}\"",
 		"cy:open": "cypress open",
 		"test:frontend": "vitest --passWithNoTests",
-		"pyodide:fetch": "node scripts/prepare-pyodide.js"
+		"pyodide:fetch": "node scripts/prepare-pyodide.js",
+		"build:container": "npm run crypto:verify && vite build"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "3.2.2",

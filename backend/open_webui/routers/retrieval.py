@@ -10,7 +10,7 @@ import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Iterator, Optional, Sequence, Union
+from typing import Literal, Callable, Iterator, Optional, Sequence, Union
 from urllib.parse import unquote, urlparse
 
 import tiktoken
@@ -102,7 +102,6 @@ from open_webui.retrieval.web.utils import get_ssrf_safe_session, validate_url
 from open_webui.retrieval.web.main import SearchResult
 from open_webui.retrieval.web.microsoft_web_iq import search_microsoft_web_iq
 from open_webui.retrieval.web.mojeek import search_mojeek
-from open_webui.retrieval.web.ollama import search_ollama_cloud
 from open_webui.retrieval.web.perplexity import search_perplexity
 from open_webui.retrieval.web.perplexity_search import search_perplexity_search
 from open_webui.retrieval.web.searchapi import search_searchapi
@@ -331,7 +330,6 @@ RETRIEVAL_CONFIG_KEYS = {
     'MISTRAL_OCR_API_KEY': 'rag.mistral_ocr_api_key',
     'MISTRAL_OCR_USE_BASE64': 'rag.mistral_ocr_use_base64',
     'MOJEEK_SEARCH_API_KEY': 'web.search.mojeek_search_api_key',
-    'OLLAMA_CLOUD_WEB_SEARCH_API_KEY': 'web.search.ollama_cloud_api_key',
     'PADDLEOCR_VL_BASE_URL': 'rag.paddleocr_vl_base_url',
     'PADDLEOCR_VL_TOKEN': 'rag.paddleocr_vl_token',
     'PDF_EXTRACT_IMAGES': 'rag.pdf_extract_images',
@@ -354,8 +352,6 @@ RETRIEVAL_CONFIG_KEYS = {
     'RAG_EXTERNAL_RERANKER_TIMEOUT': 'rag.external_reranker_timeout',
     'RAG_EXTERNAL_RERANKER_URL': 'rag.external_reranker_url',
     'RAG_FULL_CONTEXT': 'rag.full_context',
-    'RAG_OLLAMA_API_KEY': 'rag.ollama.api_key',
-    'RAG_OLLAMA_BASE_URL': 'rag.ollama.base_url',
     'RAG_OPENAI_API_BASE_URL': 'rag.openai.api_base_url',
     'RAG_OPENAI_API_KEY': 'rag.openai.api_key',
     'RAG_RERANKING_BATCH_SIZE': 'rag.reranking_batch_size',
@@ -452,10 +448,6 @@ async def get_embedding_config(request: Request, user=Depends(get_admin_user)):
             'url': config['rag.openai.api_base_url'],
             'key': config['rag.openai.api_key'],
         },
-        'ollama_config': {
-            'url': config['rag.ollama.base_url'],
-            'key': config['rag.ollama.api_key'],
-        },
         'azure_openai_config': {
             'url': config['rag.azure_openai.base_url'],
             'key': config['rag.azure_openai.api_key'],
@@ -469,11 +461,6 @@ class OpenAIConfigForm(BaseModel):
     key: str | None = None
 
 
-class OllamaConfigForm(BaseModel):
-    url: str | None = None
-    key: str | None = None
-
-
 class AzureOpenAIConfigForm(BaseModel):
     url: str | None = None
     key: str | None = None
@@ -482,9 +469,8 @@ class AzureOpenAIConfigForm(BaseModel):
 
 class EmbeddingModelUpdateForm(BaseModel):
     openai_config: OpenAIConfigForm | None = None
-    ollama_config: OllamaConfigForm | None = None
     azure_openai_config: AzureOpenAIConfigForm | None = None
-    RAG_EMBEDDING_ENGINE: str
+    RAG_EMBEDDING_ENGINE: Literal['', 'openai', 'azure_openai']
     RAG_EMBEDDING_MODEL: str
     RAG_EMBEDDING_BATCH_SIZE: int | None = 1
     ENABLE_ASYNC_EMBEDDING: bool | None = True
@@ -510,7 +496,7 @@ async def unload_embedding_model(request: Request):
 @router.post('/embedding/update')
 async def update_embedding_config(request: Request, form_data: EmbeddingModelUpdateForm, user=Depends(get_admin_user)):
     if USE_SLIM and form_data.RAG_EMBEDDING_ENGINE == '':
-        raise HTTPException(400, 'Slim requires an external embedding engine (openai, ollama, azure_openai).')
+        raise HTTPException(400, 'Slim requires an external embedding engine (openai, azure_openai).')
     config = await Config.get_many(*RETRIEVAL_CONFIG_KEYS.values())
     log.info('Updating embedding model: %s to %s', config['rag.embedding_model'], form_data.RAG_EMBEDDING_MODEL)
     await unload_embedding_model(request)
@@ -525,9 +511,6 @@ async def update_embedding_config(request: Request, form_data: EmbeddingModelUpd
         if form_data.RAG_EMBEDDING_ENGINE == 'openai' and form_data.openai_config is not None:
             updates['rag.openai.api_base_url'] = form_data.openai_config.url or ''
             updates['rag.openai.api_key'] = form_data.openai_config.key or ''
-        if form_data.RAG_EMBEDDING_ENGINE == 'ollama' and form_data.ollama_config is not None:
-            updates['rag.ollama.base_url'] = form_data.ollama_config.url or ''
-            updates['rag.ollama.api_key'] = form_data.ollama_config.key or ''
         if form_data.RAG_EMBEDDING_ENGINE == 'azure_openai' and form_data.azure_openai_config is not None:
             updates['rag.azure_openai.base_url'] = form_data.azure_openai_config.url or ''
             updates['rag.azure_openai.api_key'] = form_data.azure_openai_config.key or ''
@@ -546,20 +529,12 @@ async def update_embedding_config(request: Request, form_data: EmbeddingModelUpd
             (
                 config['rag.openai.api_base_url']
                 if config['rag.embedding_engine'] == 'openai'
-                else (
-                    config['rag.ollama.base_url']
-                    if config['rag.embedding_engine'] == 'ollama'
-                    else config['rag.azure_openai.base_url']
-                )
+                else config['rag.azure_openai.base_url']
             ),
             (
                 config['rag.openai.api_key']
                 if config['rag.embedding_engine'] == 'openai'
-                else (
-                    config['rag.ollama.api_key']
-                    if config['rag.embedding_engine'] == 'ollama'
-                    else config['rag.azure_openai.api_key']
-                )
+                else config['rag.azure_openai.api_key']
             ),
             config['rag.embedding_batch_size'],
             azure_api_version=(
@@ -580,10 +555,6 @@ async def update_embedding_config(request: Request, form_data: EmbeddingModelUpd
             'openai_config': {
                 'url': config['rag.openai.api_base_url'],
                 'key': config['rag.openai.api_key'],
-            },
-            'ollama_config': {
-                'url': config['rag.ollama.base_url'],
-                'key': config['rag.ollama.api_key'],
             },
             'azure_openai_config': {
                 'url': config['rag.azure_openai.base_url'],
@@ -691,7 +662,6 @@ async def get_rag_config(request: Request, user=Depends(get_admin_user)):
             'WEB_SEARCH_DOMAIN_FILTER_LIST': config['web.search.domain.filter_list'],
             'BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL': config['web.search.bypass_embedding_and_retrieval'],
             'BYPASS_WEB_SEARCH_WEB_LOADER': config['web.search.bypass_web_loader'],
-            'OLLAMA_CLOUD_WEB_SEARCH_API_KEY': config['web.search.ollama_cloud_api_key'],
             'SEARXNG_QUERY_URL': config['web.search.searxng_query_url'],
             'SEARXNG_LANGUAGE': config['web.search.searxng_language'],
             'OPENSERP_BASE_URL': config['web.search.openserp_base_url'],
@@ -775,7 +745,6 @@ class WebConfig(BaseModel):
     WEB_LOADER_CONCURRENT_REQUESTS: int | None = None
     BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL: bool | None = None
     BYPASS_WEB_SEARCH_WEB_LOADER: bool | None = None
-    OLLAMA_CLOUD_WEB_SEARCH_API_KEY: str | None = None
     SEARXNG_QUERY_URL: str | None = None
     SEARXNG_LANGUAGE: str | None = None
     OPENSERP_BASE_URL: str | None = None
@@ -1121,7 +1090,6 @@ async def update_rag_config(request: Request, form_data: ConfigForm, user=Depend
             'WEB_SEARCH_DOMAIN_FILTER_LIST': config['web.search.domain.filter_list'],
             'BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL': config['web.search.bypass_embedding_and_retrieval'],
             'BYPASS_WEB_SEARCH_WEB_LOADER': config['web.search.bypass_web_loader'],
-            'OLLAMA_CLOUD_WEB_SEARCH_API_KEY': config['web.search.ollama_cloud_api_key'],
             'SEARXNG_QUERY_URL': config['web.search.searxng_query_url'],
             'SEARXNG_LANGUAGE': config['web.search.searxng_language'],
             'OPENSERP_BASE_URL': config['web.search.openserp_base_url'],
@@ -1497,20 +1465,12 @@ def save_docs_to_vector_db(
             (
                 config['rag.openai.api_base_url']
                 if config['rag.embedding_engine'] == 'openai'
-                else (
-                    config['rag.ollama.base_url']
-                    if config['rag.embedding_engine'] == 'ollama'
-                    else config['rag.azure_openai.base_url']
-                )
+                else config['rag.azure_openai.base_url']
             ),
             (
                 config['rag.openai.api_key']
                 if config['rag.embedding_engine'] == 'openai'
-                else (
-                    config['rag.ollama.api_key']
-                    if config['rag.embedding_engine'] == 'ollama'
-                    else config['rag.azure_openai.api_key']
-                )
+                else config['rag.azure_openai.api_key']
             ),
             config['rag.embedding_batch_size'],
             azure_api_version=(
@@ -2184,16 +2144,7 @@ async def search_web(
     # TODO: add playwright to search the web
     if config is None:
         config = await Config.get_many(*RETRIEVAL_CONFIG_KEYS.values())
-    if engine == 'ollama_cloud':
-        return await asyncio.to_thread(
-            search_ollama_cloud,
-            'https://ollama.com',
-            config['web.search.ollama_cloud_api_key'],
-            query,
-            config['web.search.result_count'],
-            config['web.search.domain.filter_list'],
-        )
-    elif engine == 'perplexity_search':
+    if engine == 'perplexity_search':
         if config['web.search.perplexity_api_key']:
             return await asyncio.to_thread(
                 search_perplexity_search,

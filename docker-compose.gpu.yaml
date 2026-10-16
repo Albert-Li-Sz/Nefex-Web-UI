@@ -1,11 +1,10 @@
+# Official CUDA runtime; no rebuild of torch or NVIDIA libraries.
 services:
-  ollama:
-    # GPU support
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: ${OLLAMA_GPU_DRIVER-nvidia}
-              count: ${OLLAMA_GPU_COUNT-1}
-              capabilities:
-                - gpu
+  open-webui:
+    image: ${WEBUI_GPU_IMAGE:-ghcr.io/albert-li-sz/nefex-web-ui:cuda}
+    build:
+      args:
+        WEBUI_BASE_IMAGE: ghcr.io/open-webui/open-webui:v0.12.3-cuda@sha256:99e6fbec4cc2dd161b982c862b29a2748dec3bddd956d2e60a167b574919dc9a
+    environment:
+      USE_CUDA_DOCKER: 'true'
+    gpus: all

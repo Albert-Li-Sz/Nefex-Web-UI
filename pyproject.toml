@@ -1,6 +1,6 @@
 [project]
 name = "open-webui"
-description = "Open WebUI"
+description = "Nefex Web UI (Open WebUI)"
 authors = [
     { name = "Timothy Jaeryang Baek", email = "tim@openwebui.com" }
 ]

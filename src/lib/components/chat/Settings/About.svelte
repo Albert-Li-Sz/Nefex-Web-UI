@@ -3,7 +3,6 @@
 	// $i18n.t("licensed under");
 
 	import { getVersionUpdates } from '$lib/apis';
-	import { getOllamaVersion } from '$lib/apis/ollama';
 	import { WEBUI_BUILD_CHANNEL, WEBUI_VERSION } from '$lib/constants';
 	import { WEBUI_NAME, config, showChangelog } from '$lib/stores';
 	import { compareVersion } from '$lib/utils';
@@ -14,8 +13,6 @@
 	import UserSettingSection from './UserSettingSection.svelte';
 
 	const i18n: any = getContext('i18n');
-
-	let ollamaVersion = '';
 
 	let updateAvailable = null;
 	let version = {
@@ -41,10 +38,6 @@
 	};
 
 	onMount(async () => {
-		ollamaVersion = await getOllamaVersion(localStorage.token).catch((error) => {
-			return '';
-		});
-
 		if (WEBUI_BUILD_CHANNEL === 'main' && $config?.features?.enable_version_update_check) {
 			checkForVersionUpdates();
 		}
@@ -74,7 +67,7 @@
 								<span>{$i18n.t('Could not check for updates')}</span>
 							{:else}
 								<a
-									href="https://github.com/open-webui/open-webui/releases/tag/v{version.latest}"
+									href="https://github.com/Albert-Li-Sz/Nefex-Web-UI/releases/tag/v{version.latest}"
 									target="_blank"
 								>
 									{updateAvailable === null
@@ -109,14 +102,6 @@
 				{/if}
 			</UserSettingRow>
 		</UserSettingSection>
-
-		{#if ollamaVersion}
-			<UserSettingSection title={$i18n.t('settings.personal.about.sections.ollamaVersion.title')}>
-				<div class="text-xs text-gray-600 dark:text-gray-400">
-					{ollamaVersion ?? 'N/A'}
-				</div>
-			</UserSettingSection>
-		{/if}
 
 		<UserSettingSection title={$i18n.t('settings.personal.about.sections.community.title')}>
 			{#if $config?.license_metadata}

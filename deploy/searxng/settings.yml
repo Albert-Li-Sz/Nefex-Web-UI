@@ -1,0 +1,37 @@
+use_default_settings:
+  engines:
+    keep_only:
+      - startpage
+      - yahoo
+      - sogou
+      - bing
+
+engines:
+  - name: startpage
+    disabled: false
+  - name: yahoo
+    disabled: false
+  - name: sogou
+    disabled: false
+  - name: bing
+    disabled: false
+
+general:
+  instance_name: Open WebUI Search
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
+
+server:
+  bind_address: 0.0.0.0
+  port: 8080
+  # Internal service; users search through the authenticated application.
+  limiter: false
+  image_proxy: true
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 15.0

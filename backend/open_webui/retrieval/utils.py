@@ -1034,76 +1034,6 @@ async def agenerate_azure_openai_batch_embeddings(
                 raise ValueError("Unexpected Azure OpenAI embeddings response: missing 'data' key")
 
 
-def generate_ollama_batch_embeddings(
-    model: str,
-    texts: list[str],
-    url: str,
-    key: str = '',
-    prefix: str = None,
-    user: UserModel = None,
-) -> list[list[float]]:
-    log.debug('generate_ollama_batch_embeddings:model %s batch size: %s', model, len(texts))
-    json_data = {'input': texts, 'model': model, 'truncate': True}
-    if isinstance(RAG_EMBEDDING_PREFIX_FIELD_NAME, str) and isinstance(prefix, str):
-        json_data[RAG_EMBEDDING_PREFIX_FIELD_NAME] = prefix
-
-    headers = get_json_bearer_headers(key)
-    if ENABLE_FORWARD_USER_INFO_HEADERS and user:
-        headers = include_user_info_headers(headers, user)
-
-    r = requests.post(
-        f'{url}/api/embed',
-        headers=headers,
-        json=json_data,
-    )
-    if r.status_code != 200:
-        error_detail = r.json().get('error', r.text)
-        raise Exception(f'Ollama embed error ({r.status_code}): {error_detail}')
-    data = r.json()
-
-    if 'embeddings' in data:
-        return data['embeddings']
-    else:
-        raise ValueError("Unexpected Ollama embeddings response: missing 'embeddings' key")
-
-
-async def agenerate_ollama_batch_embeddings(
-    model: str,
-    texts: list[str],
-    url: str,
-    key: str = '',
-    prefix: str = None,
-    user: UserModel = None,
-) -> list[list[float]]:
-    log.debug('agenerate_ollama_batch_embeddings:model %s batch size: %s', model, len(texts))
-    form_data = {'input': texts, 'model': model, 'truncate': True}
-    if isinstance(RAG_EMBEDDING_PREFIX_FIELD_NAME, str) and isinstance(prefix, str):
-        form_data[RAG_EMBEDDING_PREFIX_FIELD_NAME] = prefix
-
-    headers = get_json_bearer_headers(key)
-    if ENABLE_FORWARD_USER_INFO_HEADERS and user:
-        headers = include_user_info_headers(headers, user)
-
-    async with aiohttp.ClientSession(
-        trust_env=True, timeout=aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT)
-    ) as session:
-        async with session.post(
-            f'{url}/api/embed',
-            headers=headers,
-            json=form_data,
-            ssl=AIOHTTP_CLIENT_SESSION_SSL,
-        ) as r:
-            if r.status != 200:
-                error_data = await r.json()
-                error_detail = error_data.get('error', str(error_data))
-                raise Exception(f'Ollama embed error ({r.status}): {error_detail}')
-            data = await r.json()
-            if 'embeddings' in data:
-                return data['embeddings']
-            else:
-                raise ValueError("Unexpected Ollama embeddings response: missing 'embeddings' key")
-
-
 def get_embedding_function(
     embedding_engine,
     embedding_model,
@@ -1119,13 +1049,13 @@ def get_embedding_function(
         # Sentence transformers: CPU-bound sync operation
         async def async_embedding_function(query, prefix=None, user=None):
             if USE_SLIM:
-                raise HTTPException(503, 'Configure an external embedding engine (openai, ollama, azure_openai).')
+                raise HTTPException(503, 'Configure an external embedding engine (openai, azure_openai).')
             # Deferred so a missing local model degrades RAG instead of crashing boot.
             if embedding_function is None:
                 raise ValueError(
                     'No embedding model is loaded. Set RAG_EMBEDDING_MODEL to a valid '
                     'SentenceTransformer model name, or configure an external '
-                    'RAG_EMBEDDING_ENGINE (ollama, openai, azure_openai).'
+                    'RAG_EMBEDDING_ENGINE (openai, azure_openai).'
                 )
 
             def encode():
@@ -1139,7 +1069,7 @@ def get_embedding_function(
             return await asyncio.to_thread(encode)
 
         return async_embedding_function
-    elif embedding_engine in ['ollama', 'openai', 'azure_openai']:
+    elif embedding_engine in ['openai', 'azure_openai']:
         embedding_function = lambda query, prefix=None, user=None: generate_embeddings(
             engine=embedding_engine,
             model=embedding_model,
@@ -1215,21 +1145,7 @@ async def generate_embeddings(
         else:
             text = f'{prefix}{text}'
 
-    if engine == 'ollama':
-        embeddings = await agenerate_ollama_batch_embeddings(
-            **{
-                'model': model,
-                'texts': text if isinstance(text, list) else [text],
-                'url': url,
-                'key': key,
-                'prefix': prefix,
-                'user': user,
-            }
-        )
-        if embeddings is None:
-            return None
-        return embeddings[0] if isinstance(text, str) else embeddings
-    elif engine == 'openai':
+    if engine == 'openai':
         embeddings = await agenerate_openai_batch_embeddings(
             model, text if isinstance(text, list) else [text], url, key, prefix, user
         )

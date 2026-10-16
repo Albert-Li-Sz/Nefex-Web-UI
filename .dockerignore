@@ -21,3 +21,6 @@ backend/data/*
 
 .venv
 .git
+
+/static/pyodide
+/backend/tests

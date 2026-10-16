@@ -38,7 +38,7 @@ def search_bocha(api_key: str, query: str, count: int, filter_list: Optional[lis
         api_key (str): A Bocha Search API key
         query (str): The query to search for
     """
-    url = 'https://api.bochaai.com/v1/web-search?utm_source=ollama'
+    url = 'https://api.bochaai.com/v1/web-search'
     headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
 
     payload = JSONCodec.dumps({'query': query, 'summary': True, 'freshness': 'noLimit', 'count': count})

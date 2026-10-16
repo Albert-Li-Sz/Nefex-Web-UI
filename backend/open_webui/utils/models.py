@@ -16,7 +16,7 @@ from open_webui.models.functions import Functions
 from open_webui.models.groups import Groups
 from open_webui.models.models import Models
 from open_webui.models.users import UserModel
-from open_webui.routers import ollama, openai
+from open_webui.routers import openai
 from open_webui.socket.utils import RedisDict
 from open_webui.utils.access_control import has_access, has_base_model_access
 from open_webui.utils.chat_variables import get_chat_variables_schema
@@ -29,7 +29,7 @@ from open_webui.utils.plugin import (
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
 
-BASE_MODELS_CACHE_KEY = f'{REDIS_KEY_PREFIX}:models:base'
+BASE_MODELS_CACHE_KEY = f'{REDIS_KEY_PREFIX}:models:base:openai'
 
 
 def public_model_params(params):
@@ -53,38 +53,19 @@ def public_model_params(params):
     )
 
 
-async def fetch_ollama_models(request: Request, user: UserModel = None):
-    raw_ollama_models = await ollama.get_all_models(request, user=user)
-    return [
-        {
-            'id': model['model'],
-            'name': model['name'],
-            'object': 'model',
-            'created': 0,
-            'owned_by': 'ollama',
-            'ollama': model,
-            'loaded': 'expires_at' in model,
-            'connection_type': model.get('connection_type', 'local'),
-            'tags': model.get('tags', []),
-        }
-        for model in raw_ollama_models['models']
-    ]
-
-
 async def fetch_openai_models(request: Request, user: UserModel = None):
     openai_response = await openai.get_all_models(request, user=user)
     return openai_response['data']
 
 
 async def get_all_base_models(request: Request, user: UserModel = None):
-    config = await Config.get_many('openai.enable', 'ollama.enable')
+    config = await Config.get_many('openai.enable')
     openai_task = fetch_openai_models(request, user) if config.get('openai.enable') else asyncio.sleep(0, result=[])
-    ollama_task = fetch_ollama_models(request, user) if config.get('ollama.enable') else asyncio.sleep(0, result=[])
     function_task = get_function_models(request)
 
-    openai_models, ollama_models, function_models = await asyncio.gather(openai_task, ollama_task, function_task)
+    openai_models, function_models = await asyncio.gather(openai_task, function_task)
 
-    return function_models + openai_models + ollama_models
+    return function_models + openai_models
 
 
 async def get_all_models(request, refresh: bool = False, user: UserModel = None):
@@ -96,7 +77,6 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
     )
     if refresh:
         await openai.get_all_models.cache.clear()
-        await ollama.get_all_models.cache.clear()
         redis = getattr(request.app.state, 'redis', None)
         if redis is not None:
             await redis.delete(BASE_MODELS_CACHE_KEY)
@@ -113,7 +93,6 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
             request.app.state.BASE_MODELS = base_models
         else:
             await openai.get_all_models.cache.clear()
-            await ollama.get_all_models.cache.clear()
     elif use_cache and request.app.state.MODELS and request.app.state.BASE_MODELS:
         base_models = request.app.state.BASE_MODELS
 
@@ -187,11 +166,9 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
 
     custom_models = await Models.get_all_models()
 
-    # Single O(1) lookup: Ollama base names first, then exact IDs (exact wins).
+    # Single O(1) exact-ID lookup for custom model overrides.
     base_model_lookup = {}
     for model in models:
-        if model.get('owned_by') == 'ollama':
-            base_model_lookup.setdefault(model['id'].split(':')[0], model)
         base_model_lookup[model['id']] = model
 
     existing_ids = {m['id'] for m in models}
@@ -473,10 +450,6 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
     models_dict = {}
     for model in models:
         model = model.copy()
-        if model.get('ollama'):
-            # Keep the moving expiry in the API response, outside the registry signature.
-            model['ollama'] = model['ollama'].copy()
-            model['ollama'].pop('expires_at', None)
         models_dict[model['id']] = model
     if isinstance(request.app.state.MODELS, RedisDict):
         try:

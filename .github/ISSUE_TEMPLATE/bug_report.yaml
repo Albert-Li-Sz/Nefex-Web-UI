@@ -72,15 +72,6 @@ body:
     validations:
       required: false
 
-  - type: input
-    id: ollama-version
-    attributes:
-      label: Ollama Version
-      description: Include this if Ollama is involved.
-      placeholder: v0.32.5
-    validations:
-      required: false
-
   - type: textarea
     id: summary
     attributes:

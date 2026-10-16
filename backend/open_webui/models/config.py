@@ -21,10 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger(__name__)
 
-API_CONFIG_KEYS = ('openai.api_configs', 'ollama.api_configs')
+API_CONFIG_KEYS = ('openai.api_configs',)
 DICT_CONFIG_KEY_ALIASES = {
     'openai.api_configs': ('OPENAI_API_CONFIGS',),
-    'ollama.api_configs': ('OLLAMA_API_CONFIGS',),
     'rag.mineru_params': ('MINERU_PARAMS',),
     'rag.docling_params': ('DOCLING_PARAMS',),
     'web.search.linkup_search_params': ('LINKUP_SEARCH_PARAMS',),
@@ -387,3 +386,32 @@ class Config(Base):
                     log.info('Repaired flattened dict config rows for %s', ', '.join(repaired_keys))
                 if default_model_keys:
                     log.info('Repaired default model config rows for %s', ', '.join(default_model_keys))
+
+    @staticmethod
+    async def remove_retired_provider_settings() -> None:
+        """Upgrade persisted settings after removal of the native provider."""
+        if not Config.PERSISTENT_ENABLED:
+            return
+        async with get_async_db() as db:
+            await db.execute(
+                delete(Config).where(
+                    Config.key.startswith('ollama.', autoescape=True)
+                    | Config.key.startswith('rag.ollama.', autoescape=True)
+                    | Config.key.startswith('OLLAMA_', autoescape=True)
+                    | Config.key.startswith('RAG_OLLAMA_', autoescape=True)
+                    | (Config.key == 'web.search.ollama_cloud_api_key')
+                )
+            )
+            for key, retired_value, reset_keys in (
+                ('rag.embedding_engine', 'ollama', ('rag.embedding_engine', 'rag.embedding_model')),
+                ('web.search.engine', 'ollama_cloud', ('web.search.engine',)),
+            ):
+                row = await db.get(Config, key)
+                if row is not None and row.value == retired_value:
+                    for reset_key in reset_keys:
+                        reset_row = await db.get(Config, reset_key)
+                        if reset_row is not None:
+                            reset_row.value = Config.default_value(reset_key)
+                            reset_row.updated_at = int(time.time())
+                    log.warning('Reset retired provider setting %s to the configured default', key)
+            await db.commit()
