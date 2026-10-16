@@ -9,7 +9,7 @@
 需要 Docker Engine / Docker Desktop 和 Compose v2。
 
 ```bash
-git clone https://github.com/Albert-Li-Sz/Nefex-Web-UI.git
+git clone --depth 1 https://github.com/Albert-Li-Sz/Nefex-Web-UI.git
 cd Nefex-Web-UI
 ./scripts/install-docker.sh
 ```

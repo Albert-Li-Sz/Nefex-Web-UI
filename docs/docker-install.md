@@ -7,7 +7,7 @@ Nefex Web UI 通过 OpenAI 兼容接口接入模型。Ollama 原生接口、连�
 需要 Docker Engine / Docker Desktop，以及支持 `up --wait` 的 Compose v2。支持 Linux amd64 / arm64 与 macOS Docker Desktop；默认安装只拉取镜像，无需 Node.js、Python 或 Go。请预留至少 20 GB 磁盘空间，运行建议分配至少 4 GB 内存。只有使用 `--build` 源码构建时才需要至少 8 GB 内存；默认前端构建堆上限为 6 GB，可通过 `BUILD_NODE_OPTIONS=--max-old-space-size=8192` 调整。
 
 ```bash
-git clone https://github.com/Albert-Li-Sz/Nefex-Web-UI.git
+git clone --depth 1 https://github.com/Albert-Li-Sz/Nefex-Web-UI.git
 cd Nefex-Web-UI
 ./scripts/install-docker.sh
 ```
@@ -99,3 +99,5 @@ GitHub Actions 在 main、版本标签和手动触发时构建并发布应用及
 ## 名称与兼容性
 
 新安装默认 Compose 项目名为 `nefex-web-ui`，界面为 `Nefex Web UI (Open WebUI)`；保留上游名称、图标和许可证。Python 模块、数据库迁移和内部 `open-webui` 服务及卷名保留兼容。已有 `.env` 中的 `COMPOSE_PROJECT_NAME` 不会由安装器改写；保留原值即可继续使用现有数据卷，避免误建空实例。
+
+构建缓存仅用于加速：CPU 缓存导出超过 2 分钟或失败时继续发布；CUDA 不导出大体积运行环境缓存，直接复用官方镜像层。镜像构建和后端回归测试仍必须通过。

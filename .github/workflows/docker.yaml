@@ -71,7 +71,7 @@ jobs:
             BUILD_CHANNEL=custom
             BUILD_NODE_OPTIONS=--max-old-space-size=12288
           cache-from: type=gha,scope=app-${{ matrix.variant }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=app-${{ matrix.variant }}-${{ matrix.arch }}
+          cache-to: ${{ matrix.variant == 'cpu' && format('type=gha,mode=max,scope=app-cpu-{0},timeout=2m,ignore-error=true', matrix.arch) || '' }}
       - name: Verify application image
         env:
           APP_DIGEST: ${{ steps.app.outputs.digest }}
@@ -92,7 +92,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.MINIO_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=minio-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=minio-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=minio-${{ matrix.arch }},timeout=2m,ignore-error=true
       - name: Export verified digests
         env:
           APP_DIGEST: ${{ steps.app.outputs.digest }}

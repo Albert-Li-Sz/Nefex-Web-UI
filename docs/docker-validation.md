@@ -92,3 +92,26 @@ npm run check
 本次更名后默认使用官方完整运行环境，依赖文件 SHA-256 与源码一致：`d532d221dcd8beb0d36f7756259cc33515464c060775f5de3c8b197a5f55f098`。默认构建会校验该文件，避免依赖变化后误用旧运行环境。CPU 基础镜像固定为 `ghcr.io/open-webui/open-webui:v0.12.3@sha256:a537bbe1e6b428820f52ed4a029d7fff97062e24d5cf32c365fba36fd0542def`；CUDA 使用同版本官方 CUDA 镜像。
 
 安装器默认拉取成品镜像，源码构建改为 `--build`，已有镜像的离线启动使用 `--no-build`。新增的回归测试覆盖三种模式，目前安装器共 7 项测试通过；既有前端 4 项测试通过。界面保留 Open WebUI 标识，项目与默认部署名改为 Nefex Web UI。原有运行实例保留 Compose 项目名和所有数据卷。
+
+发布 ARM64 镜像已通过匿名拉取，摘要为 `sha256:cc3ab7f085000d6a29b24c18145e6ec0cadc243f6a62d3f249915d7e80a46fa5`，OCI revision 为 `08cc09c83be2e53142576307ccd7cfb20ba70e3d`。隔离项目 `nefex-smoke` 直接使用该发布产物，应用、数据库、向量查询、S3、Redis、搜索和 Chromium 六项安装检查全部通过。应用 API 回归验证了注册登录、Nefex 名称、功能设置、模型发现、普通/流式聊天、批量嵌入、退役接口、文件上传/下载/删除、本地嵌入与 RAG、笔记和频道；模型调用使用临时测试提供商。
+
+应用联网搜索实际载入 4 个网页并生成 1 个向量集合。浏览器屏蔽外部 HTTPS 请求后，镜像继承的 Pyodide 314.0.3 成功加载 NumPy，计算结果为 10。新名称在登录页和浏览器标题中可见；桌面 1366×900 与移动端 390×844 检查通过，无横向溢出，无应用控制台错误，仍有既有 manifest 警告。
+
+更名后的登录页面：
+
+![Nefex 桌面登录](images/nefex-desktop.webp)
+![Nefex 移动端登录](images/nefex-mobile.webp)
+
+本机正式实例已用发布的 ARM64 应用和 MinIO 镜像升级，继续使用 `olm` 项目名与原有五个数据卷，入口仍为 <http://localhost:3180>。MinIO ARM64 发布摘要为 `sha256:77c03d023496f2c3732c56a77054ca43d363817ce922b6c218082d8025b88698`。两个发布镜像均已在空 Docker 配置下匿名拉取成功；安装器实际执行默认拉取路径，六项检查全部通过，五个服务均健康，建桶任务退出码为 0。公共配置返回 `Nefex Web UI (Open WebUI)`，`onboarding=true`，没有保留验证管理员。
+
+缓存改进不改变应用镜像内容：后续 CPU 缓存导出限时且不阻断发布，CUDA 直接复用官方镜像层，不导出大体积运行环境缓存。此配置已通过 actionlint 检查。
+
+最终[构建与发布流水线](https://github.com/Albert-Li-Sz/Nefex-Web-UI/actions/runs/38963261558)成功完成，应用源代码 revision 为 `08cc09c83be2e53142576307ccd7cfb20ba70e3d`。amd64、arm64 CPU 和 amd64 CUDA 镜像均在原生运行器通过 6 项后端回归测试；CUDA 检查在无 NVIDIA GPU 的运行器上使用 CPU 回退，不代表实际 GPU 加速验收。安装器 7 项、后端 6 项、前端 4 项，共 17 项不同回归测试通过。
+
+| 发布镜像                                                               | 多架构索引摘要                                                            | 平台                     |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------ |
+| `ghcr.io/albert-li-sz/nefex-web-ui:latest`                             | `sha256:c626bff1ddbd458a86633a784e70dee8b2482aeb391ae264307f0d7917e46891` | linux/amd64, linux/arm64 |
+| `ghcr.io/albert-li-sz/nefex-web-ui:cuda`                               | `sha256:150e6968321f30c18646e0b0ad56b2f260509526ec599dc56c04259df912910e` | linux/amd64              |
+| `ghcr.io/albert-li-sz/nefex-web-ui-minio:RELEASE.2025-10-15T17-29-55Z` | `sha256:1341d0b11608f7565e5a98d287d43329e2058b94956e1fc3355160f006be6ab9` | linux/amd64, linux/arm64 |
+
+最终又以不带镜像覆盖参数的默认命令 `./scripts/install-docker.sh` 完成一次真实安装验收：默认发布标签匿名拉取成功，运行容器的镜像标识与最终发布标签一致，五个服务健康且六项安装检查全部通过。应用代码自构建 revision 后未再变更，后续提交仅更新验证文档、截图与缓存导出策略，因此不重复构建应用镜像。
