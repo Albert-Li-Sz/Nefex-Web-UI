@@ -4076,5 +4076,8 @@
 	"YouTube": "YouTube",
 	"YouTube video player": "YouTube 视频播放器",
 	"Zoom in": "放大",
-	"Zoom out": "缩小"
+	"Zoom out": "缩小",
+	"DeepSeek Search and Fetch share your official DeepSeek API key.": "DeepSeek 搜索与网页抓取共用 DeepSeek 官方 API 密钥。",
+	"Return full page content with search results": "随搜索结果返回网页正文",
+	"Use returned content when Bypass Web Loader is enabled.": "开启「跳过网页加载器」时，直接使用返回的正文。"
 }

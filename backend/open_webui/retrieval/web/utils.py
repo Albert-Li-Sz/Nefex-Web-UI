@@ -53,6 +53,7 @@ from open_webui.env import (
 from open_webui.retrieval.loaders.external_web import ExternalWebLoader
 from open_webui.retrieval.loaders.microsoft_web_iq import MicrosoftWebIQLoader
 from open_webui.retrieval.loaders.tavily import TavilyLoader
+from open_webui.retrieval.web.deepseek import DeepSeekAPIError, fetch_deepseek_url
 from open_webui.retrieval.web.firecrawl import scrape_firecrawl_url
 from open_webui.utils.misc import is_host_allowed, is_host_blocked
 
@@ -468,6 +469,71 @@ class SafeExaLoader(BaseLoader, RateLimitMixin):
 
         if not loaded:
             raise ValueError('Exa web loader could not load any page content')
+
+    async def alazy_load(self) -> AsyncIterator[Document]:
+        docs = await run_in_threadpool(lambda: list(self.lazy_load()))
+        for doc in docs:
+            yield doc
+
+
+class SafeDeepSeekLoader(BaseLoader, RateLimitMixin):
+    def __init__(
+        self,
+        web_paths: Union[str, Sequence[str]],
+        api_key: str,
+        api_base_url: str = 'https://api.deepseek.com',
+        timeout: Optional[str] = None,
+        verify_ssl: bool = True,
+        trust_env: bool = False,
+        requests_per_second: Optional[float] = None,
+        continue_on_failure: bool = True,
+    ):
+        if not api_key or not api_key.strip():
+            raise ValueError('DeepSeek Fetch requires a DEEPSEEK_SEARCH_API_KEY')
+        self.web_paths = [web_paths] if isinstance(web_paths, str) else list(web_paths)
+        self.api_key = api_key
+        self.api_base_url = api_base_url
+        try:
+            request_timeout = float(timeout)
+        except (TypeError, ValueError):
+            request_timeout = 60
+        self.timeout = request_timeout if math.isfinite(request_timeout) and request_timeout > 0 else 60
+        self.verify_ssl = verify_ssl
+        self.trust_env = trust_env
+        # The Fetch API allows five requests per second per account.
+        self.requests_per_second = min(requests_per_second or 5, 5)
+        self.last_request_time = None
+        self.continue_on_failure = continue_on_failure
+
+    def lazy_load(self) -> Iterator[Document]:
+        loaded = 0
+        with requests.Session() as session:
+            session.trust_env = self.trust_env
+            session.verify = self.verify_ssl
+            for url in self.web_paths:
+                self._sync_wait_for_rate_limit()
+                try:
+                    payload = fetch_deepseek_url(session, self.api_key, url, self.api_base_url, self.timeout)
+                    if not payload['content'].strip():
+                        raise ValueError('DeepSeek Fetch returned empty page content')
+                except DeepSeekAPIError as error:
+                    # Account errors must not be hidden as an empty search result.
+                    if error.status_code in (401, 402, 429) or not self.continue_on_failure:
+                        raise
+                    log.warning('DeepSeek Fetch skipped a page (HTTP %s)', error.status_code)
+                    continue
+                except (requests.RequestException, ValueError) as error:
+                    log.warning('DeepSeek Fetch skipped a page (%s)', type(error).__name__)
+                    if not self.continue_on_failure:
+                        raise ValueError('DeepSeek Fetch request failed') from None
+                    continue
+                metadata = {'source': url}
+                if isinstance(payload.get('title'), str):
+                    metadata['title'] = payload['title']
+                loaded += 1
+                yield Document(page_content=payload['content'], metadata=metadata)
+        if not loaded:
+            raise ValueError('DeepSeek Fetch could not load any page content')
 
     async def alazy_load(self) -> AsyncIterator[Document]:
         docs = await run_in_threadpool(lambda: list(self.lazy_load()))
@@ -1203,6 +1269,12 @@ def get_web_loader(
         if playwright_ws_url:
             web_loader_args['playwright_ws_url'] = playwright_ws_url
 
+    if engine == 'deepseek':
+        WebLoaderClass = SafeDeepSeekLoader
+        web_loader_args['api_key'] = cfg('web.search.deepseek_api_key')
+        web_loader_args['api_base_url'] = cfg('web.search.deepseek_api_base_url')
+        web_loader_args['timeout'] = web_loader_timeout
+
     if engine == 'firecrawl':
         WebLoaderClass = SafeFireCrawlLoader
         web_loader_args['api_key'] = cfg('web.loader.firecrawl_api_key')
@@ -1253,5 +1325,5 @@ def get_web_loader(
     else:
         raise ValueError(
             f'Invalid WEB_LOADER_ENGINE: {engine}. '
-            "Please set it to 'safe_web', 'playwright', 'firecrawl', 'tavily', 'exa', 'external', or 'microsoft_web_iq'."
+            "Please set it to 'safe_web', 'playwright', 'deepseek', 'firecrawl', 'tavily', 'exa', 'external', or 'microsoft_web_iq'."
         )

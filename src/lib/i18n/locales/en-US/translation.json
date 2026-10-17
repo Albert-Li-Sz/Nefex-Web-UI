@@ -4082,5 +4082,8 @@
 	"YouTube": "",
 	"YouTube video player": "",
 	"Zoom in": "",
-	"Zoom out": ""
+	"Zoom out": "",
+	"DeepSeek Search and Fetch share your official DeepSeek API key.": "DeepSeek Search and Fetch share your official DeepSeek API key.",
+	"Return full page content with search results": "Return full page content with search results",
+	"Use returned content when Bypass Web Loader is enabled.": "Use returned content when Bypass Web Loader is enabled."
 }

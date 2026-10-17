@@ -193,6 +193,8 @@ async def get_content_from_url(request, url: str, *, config: dict | None = None)
             'rag.document_intelligence_model',
             'web.loader.ssl_verification',
             'web.search.exa_api_key',
+            'web.search.deepseek_api_key',
+            'web.search.deepseek_api_base_url',
             'rag.external_document_loader_api_key',
             'rag.external_document_loader_headers',
             'rag.external_document_loader_url',
@@ -255,6 +257,13 @@ def _get_content_from_url_sync(request, url: str, config: dict):
         docs = loader.load()
         content = ' '.join([doc.page_content for doc in docs])
         return content, docs
+
+    if config.get('web.loader.engine') == 'deepseek':
+        # Fetch delegates HTTP access to DeepSeek; probing the page locally first can
+        # stall for sites that the application server cannot reach directly.
+        loader = get_loader(request, url, config)
+        docs = loader.load()
+        return ' '.join(doc.page_content for doc in docs), docs
 
     # Streamed GET to check Content-Type without downloading the body.
     # allow_redirects=False prevents redirect-based SSRF: validate_url() above is

@@ -12,12 +12,14 @@
 	import AdminSettingField from './AdminSettingField.svelte';
 	import AdminSettingRow from './AdminSettingRow.svelte';
 	import AdminSettingSection from './AdminSettingSection.svelte';
+	import DeepSeekSettings from './DeepSeekSettings.svelte';
 
 	const i18n: any = getContext('i18n');
 
 	export let saveHandler: Function;
 
 	let webSearchEngines = [
+		'deepseek',
 		'perplexity_search',
 		'searxng',
 		'yacy',
@@ -50,6 +52,7 @@
 		'openserp'
 	];
 	let webLoaderEngines = [
+		'deepseek',
 		'playwright',
 		'firecrawl',
 		'tavily',
@@ -224,6 +227,8 @@
 						{#each webSearchEngines as engine}
 							{#if engine === 'duckduckgo' || engine === 'ddgs'}
 								<option value={engine} disabled={$config?.features?.slim}>DDGS</option>
+							{:else if engine === 'deepseek'}
+								<option value={engine}>DeepSeek Search</option>
 							{:else if engine === 'serphouse'}
 								<option value={engine}>SERPHouse</option>
 							{:else}
@@ -234,7 +239,22 @@
 				</AdminSettingRow>
 
 				{#if webConfig.WEB_SEARCH_ENGINE !== ''}
-					{#if webConfig.WEB_SEARCH_ENGINE === 'perplexity_search'}
+					{#if webConfig.WEB_SEARCH_ENGINE === 'deepseek'}
+						<DeepSeekSettings
+							bind:apiKey={webConfig.DEEPSEEK_SEARCH_API_KEY}
+							bind:apiBaseUrl={webConfig.DEEPSEEK_SEARCH_API_BASE_URL}
+						/>
+						<AdminSettingRow
+							label={$i18n.t('Return full page content with search results')}
+							description={$i18n.t('Use returned content when Bypass Web Loader is enabled.')}
+							let:labelId
+						>
+							<Switch
+								bind:state={webConfig.DEEPSEEK_SEARCH_NEED_CONTENT}
+								ariaLabelledbyId={labelId}
+							/>
+						</AdminSettingRow>
+					{:else if webConfig.WEB_SEARCH_ENGINE === 'perplexity_search'}
 						<div class="mb-2.5 flex w-full flex-col">
 							<div>
 								<div class=" self-center text-xs text-gray-600 dark:text-gray-400 mb-1">
@@ -1240,11 +1260,18 @@
 						<option value="">{$i18n.t('Default')}</option>
 						{#each webLoaderEngines as engine}
 							<option value={engine} disabled={$config?.features?.slim && engine === 'playwright'}
-								>{engine}</option
+								>{engine === 'deepseek' ? 'DeepSeek Fetch' : engine}</option
 							>
 						{/each}
 					</SettingsSelect>
 				</AdminSettingRow>
+
+				{#if webConfig.WEB_LOADER_ENGINE === 'deepseek' && webConfig.WEB_SEARCH_ENGINE !== 'deepseek'}
+					<DeepSeekSettings
+						bind:apiKey={webConfig.DEEPSEEK_SEARCH_API_KEY}
+						bind:apiBaseUrl={webConfig.DEEPSEEK_SEARCH_API_BASE_URL}
+					/>
+				{/if}
 
 				{#if webConfig.WEB_LOADER_ENGINE === 'exa'}
 					{#if webConfig.WEB_SEARCH_ENGINE === 'exa'}
@@ -1262,7 +1289,7 @@
 					{/if}
 				{/if}
 
-				{#if ['', 'safe_web', 'exa'].includes(webConfig.WEB_LOADER_ENGINE)}
+				{#if ['', 'safe_web', 'exa', 'deepseek'].includes(webConfig.WEB_LOADER_ENGINE)}
 					<AdminSettingField
 						label={$i18n.t('settings.admin.web.timeout.label')}
 						description={$i18n.t('settings.admin.web.timeout.description')}

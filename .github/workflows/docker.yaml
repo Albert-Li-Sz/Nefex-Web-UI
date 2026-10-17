@@ -68,7 +68,7 @@ jobs:
           build-args: |
             WEBUI_BASE_IMAGE=${{ matrix.base }}
             BUILD_HASH=${{ github.sha }}
-            BUILD_CHANNEL=custom
+            BUILD_CHANNEL=${{ github.ref_type == 'tag' && 'main' || github.ref_name }}
             BUILD_NODE_OPTIONS=--max-old-space-size=12288
           cache-from: type=gha,scope=app-${{ matrix.variant }}-${{ matrix.arch }}
           cache-to: ${{ matrix.variant == 'cpu' && format('type=gha,mode=max,scope=app-cpu-{0},timeout=2m,ignore-error=true', matrix.arch) || '' }}
@@ -80,7 +80,7 @@ jobs:
             -e WEBUI_SECRET_KEY=ci-isolated-test-key \
             -v "$PWD/backend/tests:/tests:ro" \
             "${APP_IMAGE}@${APP_DIGEST}" \
-            -m unittest discover -s /tests -p test_provider_dispatch.py -v
+            -m unittest discover -s /tests -p 'test_*.py' -v
           docker run --rm --entrypoint sh "${APP_IMAGE}@${APP_DIGEST}" -ec \
             'test ! -f /app/backend/open_webui/routers/ollama.py; test -f /app/build/pyodide/pyodide.mjs'
       - name: Build patched MinIO release
@@ -138,7 +138,9 @@ jobs:
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"
           refs=()
           for digest in digests/app-cuda/*; do refs+=("${app}@sha256:$(basename "$digest")"); done
-          docker buildx imagetools create -t "$app:cuda" -t "$app:git-$short-cuda" "${refs[@]}"
+          tags=(-t "$app:cuda" -t "$app:git-$short-cuda")
+          if [ "$GITHUB_REF_TYPE" = tag ]; then tags+=(-t "$app:${GITHUB_REF_NAME}-cuda"); fi
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
           refs=()
           for digest in digests/minio/*; do refs+=("${minio}@sha256:$(basename "$digest")"); done
           docker buildx imagetools create -t "$minio:latest" -t "$minio:RELEASE.2025-10-15T17-29-55Z" "${refs[@]}"

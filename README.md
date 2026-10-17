@@ -37,7 +37,7 @@ cd Nefex-Web-UI
 
 ## 功能
 
-保留聊天与流式输出、视觉模型、工具调用、知识库与 RAG、联网搜索、网页读取、文档解析、离线 Pyodide 代码执行、本地嵌入、本地 Whisper、语音、图像生成与编辑、笔记、记忆、频道、用户与权限、OAuth / LDAP、工具与函数、外部 MCP / OpenAPI 集成。
+保留聊天与流式输出、视觉模型、工具调用、知识库与 RAG、联网搜索、网页读取、文档解析、离线 Pyodide 代码执行、本地嵌入、本地 Whisper、语音、图像生成与编辑、笔记、记忆、频道、用户与权限、OAuth / LDAP、工具与函数、外部 MCP / OpenAPI 集成。联网搜索默认使用 SearXNG，也支持在管理后台接入 [DeepSeek Search / Fetch](docs/docker-install.md#deepseek-search--fetch)。
 
 模型推理、图像服务、SSO、云盘等功能需要配置对应服务与凭据。安装器提供应用和基础设施，不提供第三方模型账户。已有 SQLite、文件和向量数据的迁移见安装说明。
 

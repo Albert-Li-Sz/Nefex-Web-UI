@@ -4062,5 +4062,8 @@
 	"YouTube": "YouTube",
 	"YouTube video player": "YouTube 影片播放器",
 	"Zoom in": "放大",
-	"Zoom out": "縮小"
+	"Zoom out": "縮小",
+	"DeepSeek Search and Fetch share your official DeepSeek API key.": "DeepSeek 搜尋與網頁擷取共用 DeepSeek 官方 API 金鑰。",
+	"Return full page content with search results": "隨搜尋結果傳回網頁全文",
+	"Use returned content when Bypass Web Loader is enabled.": "開啟「略過網頁載入器」時，直接使用傳回的全文。"
 }

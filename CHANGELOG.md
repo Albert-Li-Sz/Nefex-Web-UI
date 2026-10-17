@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.4] - 2026-10-18
+
+### Added
+
+- **DeepSeek Search and Fetch.** Search the web and retrieve Markdown page content through DeepSeek's official tools API. Configure the shared API key and base URL in Admin Settings > Web Search, with optional full-content search results, domain filtering, bounded retries, and explicit authentication and billing errors. Search results and fetched pages remain compatible with citations, local embeddings, and RAG.
+- **Nefex Docker distribution.** Install the application, PostgreSQL / pgvector, MinIO, Redis, and SearXNG together with generated secrets and live service checks. CPU images support amd64 and arm64; a separate CUDA image supports amd64. Application images reuse the complete official runtime and bundled models.
+
+### Changed
+
+- The application is distributed as Nefex Web UI (Open WebUI), with upstream attribution and licensing retained.
+- Native Ollama integration is removed; OpenAI-compatible model providers, local embeddings, tools, and the remaining application features are retained.
+- Docker search and page-loader engines can be configured through environment variables. SearXNG and Playwright remain the defaults until another provider is configured.
+
 ## [0.12.3] - 2026-10-16
 
 ### Added

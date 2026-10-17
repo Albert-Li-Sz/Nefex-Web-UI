@@ -1140,6 +1140,10 @@ OPENSERP_BASE_URL = os.getenv('OPENSERP_BASE_URL', 'http://localhost:7000')
 
 SEARXNG_LANGUAGE = os.getenv('SEARXNG_LANGUAGE', 'all')
 
+DEEPSEEK_SEARCH_API_KEY = os.getenv('DEEPSEEK_SEARCH_API_KEY', '')
+DEEPSEEK_SEARCH_API_BASE_URL = os.getenv('DEEPSEEK_SEARCH_API_BASE_URL', 'https://api.deepseek.com')
+DEEPSEEK_SEARCH_NEED_CONTENT = os.getenv('DEEPSEEK_SEARCH_NEED_CONTENT', 'False').lower() == 'true'
+
 YACY_QUERY_URL = os.getenv('YACY_QUERY_URL', '')
 
 YACY_USERNAME = os.getenv('YACY_USERNAME', '')
@@ -2947,6 +2951,9 @@ DEFAULT_CONFIG = {
     'web.search.searxng_query_url': SEARXNG_QUERY_URL,
     'web.search.openserp_base_url': OPENSERP_BASE_URL,
     'web.search.searxng_language': SEARXNG_LANGUAGE,
+    'web.search.deepseek_api_key': DEEPSEEK_SEARCH_API_KEY,
+    'web.search.deepseek_api_base_url': DEEPSEEK_SEARCH_API_BASE_URL,
+    'web.search.deepseek_need_content': DEEPSEEK_SEARCH_NEED_CONTENT,
     'web.search.yacy_query_url': YACY_QUERY_URL,
     'web.search.yacy_username': YACY_USERNAME,
     'web.search.yacy_password': YACY_PASSWORD,

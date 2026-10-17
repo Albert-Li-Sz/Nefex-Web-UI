@@ -89,6 +89,7 @@ from open_webui.retrieval.web.bing import search_bing
 from open_webui.retrieval.web.bocha import search_bocha
 from open_webui.retrieval.web.brave import search_brave
 from open_webui.retrieval.web.brave_llm_context import search_brave_llm_context
+from open_webui.retrieval.web.deepseek import search_deepseek
 from open_webui.retrieval.web.duckduckgo import search_duckduckgo
 from open_webui.retrieval.web.exa import search_exa
 from open_webui.retrieval.web.external import search_external
@@ -255,6 +256,9 @@ RETRIEVAL_CONFIG_KEYS = {
     'BING_SEARCH_V7_ENDPOINT': 'web.search.bing_search_v7_endpoint',
     'BING_SEARCH_V7_SUBSCRIPTION_KEY': 'web.search.bing_search_v7_subscription_key',
     'BOCHA_SEARCH_API_KEY': 'web.search.bocha_search_api_key',
+    'DEEPSEEK_SEARCH_API_KEY': 'web.search.deepseek_api_key',
+    'DEEPSEEK_SEARCH_API_BASE_URL': 'web.search.deepseek_api_base_url',
+    'DEEPSEEK_SEARCH_NEED_CONTENT': 'web.search.deepseek_need_content',
     'BRAVE_SEARCH_API_KEY': 'web.search.brave_search_api_key',
     'BRAVE_SEARCH_CONTEXT_TOKENS': 'web.search.brave_search_context_tokens',
     'BYPASS_EMBEDDING_AND_RETRIEVAL': 'rag.bypass_embedding_and_retrieval',
@@ -675,6 +679,9 @@ async def get_rag_config(request: Request, user=Depends(get_admin_user)):
             'KAGI_SEARCH_API_KEY': config['web.search.kagi_search_api_key'],
             'MOJEEK_SEARCH_API_KEY': config['web.search.mojeek_search_api_key'],
             'BOCHA_SEARCH_API_KEY': config['web.search.bocha_search_api_key'],
+            'DEEPSEEK_SEARCH_API_KEY': config['web.search.deepseek_api_key'],
+            'DEEPSEEK_SEARCH_API_BASE_URL': config['web.search.deepseek_api_base_url'],
+            'DEEPSEEK_SEARCH_NEED_CONTENT': config['web.search.deepseek_need_content'],
             'SERPSTACK_API_KEY': config['web.search.serpstack_api_key'],
             'SERPSTACK_HTTPS': config['web.search.serpstack_https'],
             'SERPER_API_KEY': config['web.search.serper_api_key'],
@@ -733,6 +740,9 @@ async def get_rag_config(request: Request, user=Depends(get_admin_user)):
 
 
 class WebConfig(BaseModel):
+    DEEPSEEK_SEARCH_API_KEY: str | None = None
+    DEEPSEEK_SEARCH_API_BASE_URL: str | None = None
+    DEEPSEEK_SEARCH_NEED_CONTENT: bool | None = None
     ENABLE_WEB_SEARCH: bool | None = None
     ENABLE_WEB_SEARCH_CONFIRMATION: bool | None = None
     WEB_SEARCH_CONFIRMATION_CONTENT: str | None = None
@@ -1103,6 +1113,9 @@ async def update_rag_config(request: Request, form_data: ConfigForm, user=Depend
             'KAGI_SEARCH_API_KEY': config['web.search.kagi_search_api_key'],
             'MOJEEK_SEARCH_API_KEY': config['web.search.mojeek_search_api_key'],
             'BOCHA_SEARCH_API_KEY': config['web.search.bocha_search_api_key'],
+            'DEEPSEEK_SEARCH_API_KEY': config['web.search.deepseek_api_key'],
+            'DEEPSEEK_SEARCH_API_BASE_URL': config['web.search.deepseek_api_base_url'],
+            'DEEPSEEK_SEARCH_NEED_CONTENT': config['web.search.deepseek_need_content'],
             'SERPSTACK_API_KEY': config['web.search.serpstack_api_key'],
             'SERPSTACK_HTTPS': config['web.search.serpstack_https'],
             'SERPER_API_KEY': config['web.search.serper_api_key'],
@@ -2157,6 +2170,15 @@ async def search_web(
             )
         else:
             raise Exception('No PERPLEXITY_API_KEY found in environment variables')
+    elif engine == 'deepseek':
+        return await search_deepseek(
+            config['web.search.deepseek_api_key'],
+            query,
+            config['web.search.result_count'],
+            config['web.search.domain.filter_list'],
+            api_base_url=config['web.search.deepseek_api_base_url'],
+            need_content=config['web.search.deepseek_need_content'],
+        )
     elif engine == 'searxng':
         if config['web.search.searxng_query_url']:
             searxng_kwargs = {'language': config['web.search.searxng_language']}

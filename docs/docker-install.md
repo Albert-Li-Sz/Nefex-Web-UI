@@ -64,6 +64,26 @@ MinIO 使用上游修复版本 `RELEASE.2025-10-15T17-29-55Z` 源码构建，避
 
 模型调用、图像服务、SSO 与云盘需要有效的服务端点或账户；安装基础设施不会自动提供模型或第三方凭据。`.env` 也会作为应用环境文件加载，其他高级功能可直接添加项目支持的环境变量。管理员保存的设置优先于首次启动的环境默认值。
 
+### DeepSeek Search / Fetch
+
+支持 [DeepSeek 官方 Search 与 Fetch API](https://api-docs.deepseek.com/zh-cn/guides/search/)。在「管理员设置 → 联网搜索」中选择 **DeepSeek Search**，填写 DeepSeek 官方 API Key 并保存；API 地址默认 `https://api.deepseek.com`，也兼容以 `/v1` 结尾的地址。该密钥独立于聊天模型连接的密钥。
+
+网页加载器可单独选择 **DeepSeek Fetch**，与搜索共用地址和密钥，返回的 Markdown 正文可继续进入本地嵌入、知识库检索和引用流程。也可以继续使用 Playwright 抓取，或启用「随搜索结果返回网页正文」和「跳过网页加载器」，直接使用 Search 返回的正文（无正文时使用摘要）。
+
+新安装也可通过 `.env` 配置后运行安装器：
+
+```dotenv
+WEB_SEARCH_ENGINE=deepseek
+WEB_LOADER_ENGINE=deepseek
+DEEPSEEK_SEARCH_API_BASE_URL=https://api.deepseek.com
+DEEPSEEK_SEARCH_API_KEY=你的官方API密钥
+DEEPSEEK_SEARCH_NEED_CONTENT=false
+```
+
+搜索词支持 DeepSeek 的查询运算符，长度为 1–128 个字符；返回数量限制在 1–50。域名过滤继续生效。临时超时、限流和服务端错误会有限重试；密钥或余额错误会明确提示。DeepSeek 按账户限制请求频率，单次 Fetch 加载任务最多每秒发起 5 个网页请求；账户在其他应用或多个实例中的用量仍会共享限额。
+
+未填写 DeepSeek 密钥时保持默认 `searxng` / `playwright` 即可。切换为 DeepSeek 后，接口失败会显示错误，方便检查凭据和余额。SearXNG 服务仍随完整 Docker 安装部署，安装检查继续验证它的可用性。
+
 ## 管理、升级与备份
 
 ```bash
