@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.12.7] - 2026-10-18
+## [0.12.8] - 2026-10-18
 
 ### Added
 
@@ -17,12 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Make health checks read-only, serialize configuration writers, reclaim interrupted-process locks and preserve valid dotenv quoting, comments and duplicate-key semantics.
-- Require complete, unique checksum coverage for snapshot metadata and every data archive; truncated or incomplete checksum manifests cannot bypass restoration checks.
+- Require complete, unique checksum coverage for snapshot metadata and every data archive, and self-validate new snapshots before applying changes. Truncated manifests and unrelated archives in the caller's directory cannot bypass or omit restoration checks.
 - Refuse source builds when a deployment-only update has a different version from the local application source; reject direct data downgrades and unsupported/shared-volume layouts before stopping services.
 
 ### Changed
 
-- Fresh installations pin application images to v0.12.7. Existing terminal installations offer install, update, check, backup and rollback operations.
+- Fresh installations pin application images to v0.12.8. Existing terminal installations offer install, update, check, backup and rollback operations.
 - Build published application images on release tags or manual dispatch. Reuse the published MinIO image when its source is unchanged, avoiding duplicate builds for the same application commit.
 
 ## [0.12.5] - 2026-10-18

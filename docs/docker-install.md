@@ -120,7 +120,7 @@ docker compose logs --tail 100 searxng
 # 更新到最新正式版
 ./scripts/install-docker.sh --update
 # 固定目标版本
-./scripts/install-docker.sh --update --to v0.12.7
+./scripts/install-docker.sh --update --to v0.12.8
 # 自动化执行，不询问确认
 ./scripts/install-docker.sh --update --non-interactive
 # 停止服务，保留全部数据
@@ -168,7 +168,7 @@ bash /tmp/nefex-install.sh --update --install-dir /opt/nefex-web-ui
 
 ### 镜像与源码构建
 
-新安装默认应用镜像固定为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.7`，CUDA 镜像为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.7-cuda`，MinIO 为 `ghcr.io/albert-li-sz/nefex-web-ui-minio:RELEASE.2025-10-15T17-29-55Z`；可在 `.env` 中覆盖 `WEBUI_IMAGE`、`MINIO_IMAGE`。`latest` / `main` 为 CPU 完整镜像，支持 amd64 / arm64；`cuda` 为 amd64 CUDA 镜像。`git-提交短号` 标签可固定应用版本，生产环境还可固定镜像摘要。
+新安装默认应用镜像固定为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.8`，CUDA 镜像为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.8-cuda`，MinIO 为 `ghcr.io/albert-li-sz/nefex-web-ui-minio:RELEASE.2025-10-15T17-29-55Z`；可在 `.env` 中覆盖 `WEBUI_IMAGE`、`MINIO_IMAGE`。`latest` / `main` 为 CPU 完整镜像，支持 amd64 / arm64；`cuda` 为 amd64 CUDA 镜像。`git-提交短号` 标签可固定应用版本，生产环境还可固定镜像摘要。
 
 需要构建本地修改时：
 

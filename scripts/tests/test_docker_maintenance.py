@@ -78,7 +78,7 @@ class MaintenanceTests(unittest.TestCase):
         self.assertIn('COMPOSE_PROJECT_NAME=legacy-project', config)
         self.assertIn('POSTGRES_IMAGE=registry.test/old-postgres-image@sha256:', config)
         self.assertIn('WEBUI_IMAGE=ghcr.io/albert-li-sz/nefex-web-ui@sha256:', config)
-        self.assertEqual((self.root / 'VERSION').read_text().strip(), '0.12.7')
+        self.assertEqual((self.root / 'VERSION').read_text().strip(), '0.12.8')
         self.assertFalse((self.root / 'injected').exists())
         self.assertNotIn('postgres-fixture-secret', result.stdout + result.stderr)
         self.assertEqual(len(self.snapshots()), 1)
@@ -89,7 +89,7 @@ class MaintenanceTests(unittest.TestCase):
         (self.root / 'VERSION').write_text('0.12.4\n')
         result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.12.4')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('v0.12.4 → v0.12.7', result.stdout)
+        self.assertIn('v0.12.4 → v0.12.8', result.stdout)
         self.assertIn('session-fixture-secret', (self.root / '.env').read_text())
 
     def test_update_detects_existing_cuda_mode(self):
@@ -140,6 +140,23 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(len(self.snapshots()), 1)
         self.assertFalse(any(e[0] == 'pull' for e in self.events()))
         self.assertTrue(any('up' in e for e in self.events()))
+
+    def test_caller_directory_archives_do_not_change_the_snapshot_checksum_list(self):
+        (self.root / 'volume-1.tar.gz').write_bytes(b'unrelated caller file')
+        result = self.run_maintenance('--backup', '--non-interactive')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        snapshot = self.snapshots()[0].parent
+        sums = (snapshot / 'SHA256SUMS').read_text()
+        for number in range(1, 6):
+            self.assertIn('volume-' + str(number) + '.tar.gz', sums)
+
+    def test_volume_consumers_remaining_after_stop_abort_backup_and_resume_services(self):
+        result = self.run_maintenance('--backup', '--non-interactive', RUNNING_CONSUMER='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.snapshots())
+        self.assertTrue(any('stop' in e for e in self.events()))
+        self.assertTrue(any('up' in e for e in self.events()))
+        self.assertFalse(any(e[0] == 'run' and 'tar' in e for e in self.events()))
 
     def test_rollback_checks_hashes_before_stopping_or_modifying_data(self):
         self.assertEqual(self.run_maintenance('--backup', '--non-interactive').returncode, 0)
@@ -207,6 +224,18 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual((self.root / '.env').read_bytes(), original)
         self.assertFalse(any('stop' in e for e in self.events()))
 
+    def test_project_from_a_different_install_directory_is_never_changed(self):
+        result = self.run_maintenance(
+            '--update',
+            '--local',
+            '--non-interactive',
+            COMPOSE_PROJECT_NAME='another-project',
+            FAKE_WORKING_DIR='/another/installation',
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual((self.root / '.env').read_text(), self.original)
+        self.assertFalse(any('stop' in e or e[0] == 'pull' for e in self.events()))
+
     def test_direct_downgrade_is_rejected(self):
         result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.13.0')
         self.assertNotEqual(result.returncode, 0)
@@ -226,13 +255,13 @@ class MaintenanceTests(unittest.TestCase):
         self.assertFalse(self.calls.exists())
 
     def test_local_target_must_match_requested_version(self):
-        result = self.run_maintenance('--update', '--local', '--to', 'v0.12.8', '--non-interactive')
+        result = self.run_maintenance('--update', '--local', '--to', 'v0.12.9', '--non-interactive')
         self.assertEqual(result.returncode, 2)
         self.assertFalse(any(e[0] == 'pull' for e in self.events()))
 
     def test_same_version_is_noop(self):
-        (self.root / 'VERSION').write_text('0.12.7\n')
-        result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.12.7')
+        (self.root / 'VERSION').write_text('0.12.8\n')
+        result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.12.8')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any('stop' in e or e[0] == 'pull' for e in self.events()))
         self.assertEqual((self.root / '.env').read_text(), self.original)

@@ -28,7 +28,7 @@ from pathlib import Path
 args=sys.argv[1:]
 if os.environ.get('CURL_FAIL'):sys.exit(22)
 if '--head' in args:
- print('https://github.com/Albert-Li-Sz/Nefex-Web-UI/releases/tag/v0.12.7',end='');sys.exit(0)
+ print('https://github.com/Albert-Li-Sz/Nefex-Web-UI/releases/tag/v0.12.8',end='');sys.exit(0)
 url=next(x for x in args if x.startswith('https://'))
 out=args[args.index('-o')+1]
 Path(out).write_bytes((Path(os.environ['PAYLOAD'])/url.rsplit('/',1)[1]).read_bytes())
@@ -42,9 +42,9 @@ Path(out).write_bytes((Path(os.environ['PAYLOAD'])/url.rsplit('/',1)[1]).read_by
         }
         self.make_archive()
 
-    def make_archive(self, special=None, version='0.12.7'):
-        prefix = 'nefex-web-ui-v0.12.7-docker/'
-        archive = self.payload / 'nefex-web-ui-v0.12.7-docker.tar.gz'
+    def make_archive(self, special=None, version='0.12.8'):
+        prefix = 'nefex-web-ui-v0.12.8-docker/'
+        archive = self.payload / 'nefex-web-ui-v0.12.8-docker.tar.gz'
         files = {
             'VERSION': version + '\n',
             'install-files.txt': 'VERSION\ninstall-files.txt\nscripts/install-docker.sh\n',
@@ -69,7 +69,7 @@ Path(out).write_bytes((Path(os.environ['PAYLOAD'])/url.rsplit('/',1)[1]).read_by
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         (self.payload / 'SHA256SUMS').write_text(digest + '  ' + archive.name + '\n')
 
-    def fetch(self, version='v0.12.7', **env):
+    def fetch(self, version='v0.12.8', **env):
         return subprocess.run(
             [
                 'bash',
@@ -92,16 +92,16 @@ Path(out).write_bytes((Path(os.environ['PAYLOAD'])/url.rsplit('/',1)[1]).read_by
 
     def test_checksum_mismatch_never_extracts_or_executes_the_package(self):
         sums = self.payload / 'SHA256SUMS'
-        sums.write_text('0' * 64 + '  nefex-web-ui-v0.12.7-docker.tar.gz\n')
+        sums.write_text('0' * 64 + '  nefex-web-ui-v0.12.8-docker.tar.gz\n')
         result = self.fetch()
         self.assertNotEqual(result.returncode, 0)
-        self.assertFalse((self.download / 'nefex-web-ui-v0.12.7-docker').exists())
+        self.assertFalse((self.download / 'nefex-web-ui-v0.12.8-docker').exists())
         self.assertFalse((self.root / 'entrypoint-args').exists())
 
     def test_network_errors_stop_before_extraction(self):
         result = self.fetch(CURL_FAIL='1')
         self.assertNotEqual(result.returncode, 0)
-        self.assertFalse((self.download / 'nefex-web-ui-v0.12.7-docker').exists())
+        self.assertFalse((self.download / 'nefex-web-ui-v0.12.8-docker').exists())
 
     def test_archive_parent_traversal_is_rejected(self):
         self.make_archive(special='traversal')
@@ -111,7 +111,7 @@ Path(out).write_bytes((Path(os.environ['PAYLOAD'])/url.rsplit('/',1)[1]).read_by
     def test_archive_links_are_rejected(self):
         self.make_archive(special='link')
         self.assertNotEqual(self.fetch().returncode, 0)
-        self.assertFalse((self.download / 'nefex-web-ui-v0.12.7-docker').exists())
+        self.assertFalse((self.download / 'nefex-web-ui-v0.12.8-docker').exists())
 
     def test_archive_version_must_match_release_tag(self):
         self.make_archive(version='0.12.5')

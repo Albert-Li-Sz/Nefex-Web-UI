@@ -122,6 +122,9 @@ existing_gpu=false
 case "$(read_env NEFEX_INSTALL_GPU "$ENV_FILE")" in true) existing_gpu=true ;; esac
 app_id=$("${compose[@]}" ps -aq open-webui)
 [[ -n "$app_id" && "$app_id" != *$'\n'* ]] || { echo '未找到唯一的旧应用容器，请先完成安装或检查项目名。' >&2; exit 2; }
+app_working=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$app_id")
+if [[ -d "$app_working" ]]; then app_working=$(cd -- "$app_working" && pwd -P); fi
+[[ "$app_working" == "$ROOT" ]] || { echo '项目对应的原安装路径与 --install-dir 不一致，请检查项目名和目录。' >&2; exit 2; }
 if [[ "$(docker inspect --format '{{if .HostConfig.DeviceRequests}}true{{else}}false{{end}}' "$app_id")" == true ]]; then existing_gpu=true; fi
 if [[ "$existing_gpu" == true ]]; then compose+=(-f "$ROOT/docker-compose.gpu.yaml"); fi
 [[ "$gpu" != auto ]] || gpu="$existing_gpu"
@@ -200,7 +203,8 @@ validate_snapshot() {
   local snapshot="$1" file expected actual volume logical archive matches
   local required=(format project.name root.path helper.image environment.env files.present files.absent configuration.tar.gz images.tsv running.services volumes.tsv compose.yaml)
   [[ "$snapshot" != *','* && "$snapshot" != *$'\n'* ]] || return 1
-  [[ -d "$snapshot" && -f "$snapshot/complete" && -f "$snapshot/SHA256SUMS" ]] || { echo '备份不完整。' >&2; return 1; }
+  [[ -d "$snapshot" && -f "$snapshot/SHA256SUMS" ]] || { echo '备份不完整。' >&2; return 1; }
+  if [[ "${2:-true}" != false && ! -f "$snapshot/complete" ]]; then echo '备份未完成。' >&2; return 1; fi
   for file in "${required[@]}"; do
     [[ -f "$snapshot/$file" && ! -L "$snapshot/$file" ]] || { echo "备份缺少文件：$file" >&2; return 1; }
   done
@@ -320,12 +324,13 @@ make_snapshot() {
   recovery="$directory"; transaction=stopped
   "${compose[@]}" stop
   while IFS=$'\t' read -r volume logical archive; do
+    [[ -z "$(docker ps -q --filter "volume=$volume")" ]] || { echo "数据卷仍被运行中的容器使用，无法创建一致备份：$volume" >&2; return 1; }
     docker run --rm --pull never --network none --entrypoint tar \
       --mount "type=volume,source=$volume,target=/data,readonly" --mount "type=bind,source=$directory,target=/backup" \
       "$helper" -czpf "/backup/$archive" -C /data .
   done < "$directory/volumes.tsv"
   : > "$directory/SHA256SUMS"
-  for file in format project.name root.path helper.image environment.env files.present files.absent configuration.tar.gz images.tsv running.services volumes.tsv compose.yaml volume-*.tar.gz; do
+  for file in format project.name root.path helper.image environment.env files.present files.absent configuration.tar.gz images.tsv running.services volumes.tsv compose.yaml 'volume-*.tar.gz'; do
     if [[ "$file" == 'volume-*.tar.gz' ]]; then
       for archive in "$directory"/volume-*.tar.gz; do
         checksum=$(nefex_hash "$archive"); [[ "$checksum" =~ ^[0-9a-f]{64}$ ]] || return 1
@@ -336,6 +341,7 @@ make_snapshot() {
       printf '%s  %s\n' "$checksum" "$file" >> "$directory/SHA256SUMS"
     fi
   done
+  validate_snapshot "$directory" false
   touch "$directory/complete"
   echo "完整备份：$directory"
 }
