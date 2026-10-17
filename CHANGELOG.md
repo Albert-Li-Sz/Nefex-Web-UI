@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.5] - 2026-10-18
+
+### Added
+
+- **Interactive Docker installer.** A six-step Chinese terminal wizard configures CPU/CUDA, published/source/cached images, ports and public URL, optional model credentials, SearXNG or DeepSeek, and initial administrator access. Secret input is hidden and excluded from the confirmation summary.
+- **Transactional configuration.** Validate a private staged dotenv file before replacing the existing configuration. Cancellation, EOF, and validation failures leave the original file intact. Preserve existing secrets and safely quote literal credentials without shell execution or Compose interpolation.
+
+### Changed
+
+- Direct terminal installation opens the wizard; `--interactive --init-only` saves configuration without starting services, while `--non-interactive` preserves automation. `--check` never starts the wizard. CPU/CUDA preference survives subsequent runs.
+- Fresh installations pin the CPU and CUDA application images to v0.12.5. Existing configuration and persistent data are retained.
+
 ## [0.12.4] - 2026-10-18
 
 ### Added

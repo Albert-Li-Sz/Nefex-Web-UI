@@ -12,9 +12,35 @@ cd Nefex-Web-UI
 ./scripts/install-docker.sh
 ```
 
-脚本创建权限为 `600` 的 `.env`，为数据库、Redis、MinIO、应用会话和搜索自动生成独立随机密钥，拉取 Nefex Web UI、MinIO 和其他上游镜像，启动服务，等待健康检查，然后执行真实服务检查。再次执行会保留配置、密钥和数据卷。
+在交互终端直接运行脚本会进入中文安装向导。脚本创建权限为 `600` 的 `.env`，为数据库、Redis、MinIO、应用会话和搜索自动生成独立随机密钥，拉取 Nefex Web UI、MinIO 和其他上游镜像，启动服务，等待健康检查，然后执行真实服务检查。再次执行会保留配置、密钥和数据卷。
 
-应用默认地址为 <http://localhost:3000>。首次打开创建管理员账户，然后在「管理员设置 → 连接」填写模型 API 地址与密钥。也可先生成配置再编辑：
+### 交互安装向导
+
+向导按 6 步完成配置：
+
+1. 选择 CPU 或 NVIDIA CUDA，以及拉取发布镜像、源码构建或使用本地缓存。CUDA 需要 NVIDIA Container Toolkit；轻量 Docker 安装包选择源码构建时会提示改用完整源码包。
+2. 设置 WebUI 端口、监听地址、实际访问 URL。CORS 地址随访问 URL 一起保存；使用反向代理时填写公开的 HTTPS 地址。
+3. 可选填写 OpenAI 兼容模型地址和 API Key，也可安装后在管理后台配置。
+4. 选择无需密钥的 SearXNG，或填写 DeepSeek 官方密钥使用 Search/Fetch。未填写 DeepSeek 密钥时先使用 SearXNG。
+5. 预设管理员邮箱和密码（推荐），或选择首次打开网页创建。管理员密码为空时会保留已有密码或生成随机密码；预设管理员时关闭开放注册。
+6. 核对配置摘要并确认。密钥不显示在摘要中；确认前退出、输入结束或取消，都不会覆盖原有 `.env`，也不会启动容器。
+
+已有 `.env` 会作为默认值，原有服务密钥保留。写入前先验证 Compose 配置，验证失败时保留原配置。API Key 隐藏输入，Enter 保留已有值，输入 `-` 清空；所有密钥只保存在权限为 `600` 的配置文件中。自动生成的管理员密码可在本机该文件的 `WEBUI_ADMIN_PASSWORD` 项查看。
+
+已有用户的账户和密码不会被向导重置；已在管理后台保存的应用配置优先于环境变量。CUDA 选择会保存为 `NEFEX_INSTALL_GPU`，再次运行仍使用同一模式；`--cpu` / `--gpu` 可显式切换。更换 Compose 项目名会使用不同数据卷，向导不会修改已有项目名。
+
+```bash
+# 强制进入引导，仅保存配置
+./scripts/install-docker.sh --interactive --init-only
+# 自动化：按已有 .env 或默认值运行，不显示提示
+./scripts/install-docker.sh --non-interactive
+# 指定独立配置文件
+./scripts/install-docker.sh --interactive --env-file ./production.env
+```
+
+终端直接运行默认进入引导；非终端输入保持非交互模式，`--init-only` 和 `--check` 默认也不显示提示。`--check` 始终只检查服务，配合 `--interactive` 也不会打开安装引导。
+
+应用默认地址为 <http://localhost:3000>，安装结束会显示实际地址。模型接口可在「管理员设置 → 连接」填写。也可先生成配置再编辑：
 
 ```bash
 ./scripts/install-docker.sh --init-only
@@ -96,7 +122,7 @@ docker compose logs --tail 100 searxng
 docker compose down
 ```
 
-默认应用镜像为 `ghcr.io/albert-li-sz/nefex-web-ui:latest`，MinIO 为 `ghcr.io/albert-li-sz/nefex-web-ui-minio:RELEASE.2025-10-15T17-29-55Z`；可在 `.env` 中覆盖 `WEBUI_IMAGE`、`MINIO_IMAGE`。`latest` / `main` 为 CPU 完整镜像，支持 amd64 / arm64；`cuda` 为 amd64 CUDA 镜像。`git-提交短号` 标签可固定应用版本，生产环境还可固定镜像摘要。
+新安装默认应用镜像固定为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.5`，CUDA 镜像为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.5-cuda`，MinIO 为 `ghcr.io/albert-li-sz/nefex-web-ui-minio:RELEASE.2025-10-15T17-29-55Z`；可在 `.env` 中覆盖 `WEBUI_IMAGE`、`MINIO_IMAGE`。`latest` / `main` 为 CPU 完整镜像，支持 amd64 / arm64；`cuda` 为 amd64 CUDA 镜像。`git-提交短号` 标签可固定应用版本，生产环境还可固定镜像摘要。
 
 需要构建本地修改时：
 

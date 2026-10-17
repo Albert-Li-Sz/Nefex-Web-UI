@@ -19,6 +19,8 @@ class InstallerTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         (self.root / 'scripts').mkdir()
+        (self.root / 'backend').mkdir()
+        shutil.copy(REPO / 'package.json', self.root / 'package.json')
         shutil.copy(REPO / 'scripts/install-docker.sh', self.root / 'scripts/install-docker.sh')
         shutil.copy(REPO / '.env.example', self.root / '.env.example')
         self.calls = self.root / 'calls'
@@ -27,18 +29,20 @@ class InstallerTests(unittest.TestCase):
             '#!/bin/sh\n'
             'printf "%s\\n" "$*" >> "$DOCKER_CALLS"\n'
             'case "$*" in *"up -d"*) exit "${UP_EXIT:-0}";; esac\n'
+            'case "$*" in *"config --quiet"*) exit "${CONFIG_EXIT:-0}";; esac\n'
             'exit 0\n'
         )
         fake_docker.chmod(0o755)
         self.environment = {**os.environ, 'PATH': f'{self.root}:{os.environ["PATH"]}', 'DOCKER_CALLS': str(self.calls)}
 
-    def run_installer(self, *arguments, **environment):
+    def run_installer(self, *arguments, input=None, **environment):
         return subprocess.run(
             ['bash', str(self.root / 'scripts/install-docker.sh'), *arguments],
             cwd=self.root,
             env={**self.environment, **environment},
             capture_output=True,
             text=True,
+            input=input,
         )
 
     def test_generates_distinct_private_secrets_and_is_idempotent(self):
@@ -108,6 +112,185 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('exec -T open-webui python check_stack.py', calls)
         self.assertNotIn(' up ', calls)
         self.assertNotIn(' build', calls)
+
+    def wizard_answers(
+        self,
+        *,
+        runtime='1',
+        mode='1',
+        port='3000',
+        url='http://localhost:3000',
+        model=None,
+        deepseek=None,
+        admin=True,
+        email='admin@example.test',
+        password='',
+        confirm='y',
+    ):
+        answers = [runtime, mode, '', port, '127.0.0.1', url]
+        answers += ['1'] if model is None else ['2', model[0], model[1]]
+        answers += ['1'] if deepseek is None else ['2', deepseek[0], deepseek[1]]
+        answers += ['2', email, password] if admin else ['1']
+        return '\n'.join(answers + [confirm]) + '\n'
+
+    def test_interactive_configuration_creates_private_admin_without_starting(self):
+        result = self.run_installer('--interactive', '--init-only', input=self.wizard_answers())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = (self.root / '.env').read_text()
+        self.assertIn('WEBUI_ADMIN_EMAIL=admin@example.test', config)
+        self.assertRegex(config, r'WEBUI_ADMIN_PASSWORD=[0-9a-f]{48}')
+        self.assertIn('ENABLE_SIGNUP=false', config)
+        self.assertIn('CORS_ALLOW_ORIGIN=http://localhost:3000', config)
+        self.assertIn('[6/6]', result.stdout)
+        self.assertNotIn(' up ', self.calls.read_text())
+        self.assertEqual((self.root / '.env').stat().st_mode & 0o777, 0o600)
+
+    def test_cancelling_does_not_create_configuration_or_start_services(self):
+        result = self.run_installer('--interactive', input=self.wizard_answers(confirm='n'))
+        self.assertEqual(result.returncode, 130)
+        self.assertFalse((self.root / '.env').exists())
+        self.assertFalse([p for p in self.root.glob('.env.*') if p.name != '.env.example'])
+        self.assertNotIn(' pull', self.calls.read_text())
+
+    def test_cancelling_preserves_existing_configuration_byte_for_byte(self):
+        env_file = self.root / '.env'
+        original = b'POSTGRES_PASSWORD=keep-this-secret\nOPEN_WEBUI_PORT=3123\n'
+        env_file.write_bytes(original)
+        result = self.run_installer('--interactive', input=self.wizard_answers(confirm='n'))
+        self.assertEqual(result.returncode, 130)
+        self.assertEqual(env_file.read_bytes(), original)
+        self.assertFalse([p for p in self.root.glob('.env.*') if p.name != '.env.example'])
+
+    def test_eof_cancels_instead_of_accepting_defaults(self):
+        result = self.run_installer('--interactive', input='')
+        self.assertEqual(result.returncode, 130)
+        self.assertFalse((self.root / '.env').exists())
+        self.assertNotIn(' pull', self.calls.read_text())
+
+    def test_invalid_ports_are_reprompted_before_saving(self):
+        result = self.run_installer(
+            '--interactive', '--init-only', input=self.wizard_answers(port='0\n65536\n3oops\n3000')
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count('端口必须是'), 3)
+        self.assertIn('OPEN_WEBUI_PORT=3000', (self.root / '.env').read_text())
+
+    def test_public_url_is_an_origin_and_trailing_slash_is_normalized(self):
+        result = self.run_installer(
+            '--interactive',
+            '--init-only',
+            input=self.wizard_answers(url='https://example.test/path\nhttps://example.test/'),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = (self.root / '.env').read_text()
+        self.assertIn('WEBUI_URL=https://example.test\n', config)
+        self.assertIn('CORS_ALLOW_ORIGIN=https://example.test\n', config)
+        self.assertIn('不包含路径', result.stdout)
+
+    def test_secret_input_is_hidden_and_never_executed(self):
+        key = 'sk-$(touch injected) ${UNSET_FIXTURE} # "quoted" \\tail'
+        result = self.run_installer(
+            '--interactive', '--init-only', input=self.wizard_answers(model=('https://example.test/v1', key))
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(key, result.stdout + result.stderr)
+        self.assertFalse((self.root / 'injected').exists())
+        again = self.run_installer(
+            '--interactive', '--init-only', input=self.wizard_answers(model=('https://example.test/v1', ''))
+        )
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertNotIn(key, again.stdout + again.stderr)
+        real_docker = shutil.which('docker', path=os.environ['PATH'])
+        if real_docker:
+            compose_file = self.root / 'dotenv-check.yaml'
+            compose_file.write_text(
+                'services:\n  check:\n    image: example\n    environment:\n      KEY: ${OPENAI_API_KEY}\n'
+            )
+            check = subprocess.run(
+                [
+                    real_docker,
+                    'compose',
+                    '--project-directory',
+                    str(self.root),
+                    '--env-file',
+                    str(self.root / '.env'),
+                    '-f',
+                    str(compose_file),
+                    'config',
+                    '--environment',
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(check.returncode, 0, check.stderr)
+            self.assertIn('OPENAI_API_KEY=' + key, check.stdout.splitlines())
+
+    def test_deepseek_selection_saves_shared_credentials(self):
+        key = 'deepseek-test-key-only'
+        result = self.run_installer(
+            '--interactive', '--init-only', input=self.wizard_answers(deepseek=('https://api.deepseek.com/v1', key))
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = (self.root / '.env').read_text()
+        self.assertIn('WEB_SEARCH_ENGINE=deepseek', config)
+        self.assertIn('WEB_LOADER_ENGINE=deepseek', config)
+        self.assertIn('DEEPSEEK_SEARCH_API_KEY=' + key, config)
+        self.assertNotIn(key, result.stdout + result.stderr)
+
+    def test_empty_deepseek_key_keeps_working_searxng_defaults(self):
+        result = self.run_installer(
+            '--interactive', '--init-only', input=self.wizard_answers(deepseek=('https://api.deepseek.com', ''))
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = (self.root / '.env').read_text()
+        self.assertIn('WEB_SEARCH_ENGINE=searxng', config)
+        self.assertIn('WEB_LOADER_ENGINE=playwright', config)
+
+    def test_cuda_choice_persists_and_cpu_flag_overrides_it(self):
+        result = self.run_installer('--interactive', '--init-only', input=self.wizard_answers(runtime='2'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('NEFEX_INSTALL_GPU=true', (self.root / '.env').read_text())
+        self.calls.unlink()
+        self.assertEqual(self.run_installer('--init-only').returncode, 0)
+        self.assertIn('docker-compose.gpu.yaml', self.calls.read_text())
+        self.calls.unlink()
+        self.assertEqual(self.run_installer('--cpu', '--init-only').returncode, 0)
+        self.assertNotIn('docker-compose.gpu.yaml', self.calls.read_text())
+
+    def test_wizard_source_and_cached_modes_run_only_selected_operations(self):
+        for mode, expected in [('2', 'build open-webui'), ('3', ' up ')]:
+            self.calls.unlink(missing_ok=True)
+            result = self.run_installer('--interactive', input=self.wizard_answers(mode=mode, admin=False))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = self.calls.read_text()
+            self.assertIn(expected, calls)
+            if mode == '3':
+                self.assertNotIn(' pull', calls)
+                self.assertNotIn(' build', calls)
+                self.assertIn('--pull never', calls)
+
+    def test_failed_compose_validation_does_not_overwrite_configuration(self):
+        env_file = self.root / '.env'
+        original = b'POSTGRES_PASSWORD=keep-this-secret\n'
+        env_file.write_bytes(original)
+        result = self.run_installer('--interactive', input=self.wizard_answers(), CONFIG_EXIT='7')
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(env_file.read_bytes(), original)
+        self.assertNotIn(' up ', self.calls.read_text())
+        self.assertFalse([p for p in self.root.glob('.env.*') if p.name != '.env.example'])
+
+    def test_check_flag_never_prompts_even_with_interactive_flag(self):
+        result = self.run_installer('--interactive', '--check', input='')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('[1/6]', result.stdout)
+        self.assertNotIn(' up ', self.calls.read_text())
+
+    def test_image_only_bundle_explains_source_build_requirement(self):
+        (self.root / 'package.json').unlink()
+        result = self.run_installer('--build')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('完整源码包', result.stderr)
+        self.assertNotIn(' build', self.calls.read_text())
 
 
 if __name__ == '__main__':

@@ -14,9 +14,16 @@ cd Nefex-Web-UI
 ./scripts/install-docker.sh
 ```
 
-默认拉取成品镜像，自动部署应用、PostgreSQL / pgvector、MinIO、Redis、SearXNG，生成随机密钥和私有存储桶，并等待健康检查及真实服务检查通过。
+在终端直接运行会进入中文交互向导，依次配置 CPU/CUDA、镜像方式、端口与访问地址、模型接口、SearXNG/DeepSeek 和管理员账户。密钥隐藏输入，确认前显示配置摘要；取消不会修改原配置。默认拉取成品镜像，自动部署应用、PostgreSQL / pgvector、MinIO、Redis、SearXNG，生成随机密钥和私有存储桶，并等待健康检查及真实服务检查通过。
 
-打开 <http://localhost:3000> 创建管理员，在「管理员设置 → 连接」配置模型 API 地址与密钥。
+安装完成后打开向导中设置的地址（默认 <http://localhost:3000>）。可在向导中预设管理员，或选择首次访问网页创建；模型接口和 DeepSeek 密钥也可稍后在管理后台填写。
+
+```bash
+# 只配置，不启动服务
+./scripts/install-docker.sh --interactive --init-only
+# 自动化安装，不显示交互提示
+./scripts/install-docker.sh --non-interactive
+```
 
 - [完整安装、配置、备份与迁移](docs/docker-install.md)
 - [验证记录与测试范围](docs/docker-validation.md)
