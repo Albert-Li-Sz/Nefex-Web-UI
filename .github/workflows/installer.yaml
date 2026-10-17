@@ -1,0 +1,40 @@
+name: Installer maintenance regression
+
+on:
+  push:
+    branches: [main]
+    paths: ['install.sh', 'install-files.txt', 'VERSION', 'scripts/**', 'docker-compose*.yaml', '.env.example', '.github/workflows/installer.yaml']
+  pull_request:
+    branches: [main]
+    paths: ['install.sh', 'install-files.txt', 'VERSION', 'scripts/**', 'docker-compose*.yaml', '.env.example', '.github/workflows/installer.yaml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Installer / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Validate Bash syntax and maintenance transactions
+        shell: bash
+        run: |
+          bash --version | head -n 1
+          for file in install.sh scripts/install-docker.sh scripts/update-docker.sh scripts/lib/docker-common.sh; do bash -n "$file"; done
+          python -m unittest discover -s scripts/tests -v
+      - name: Check the Docker distribution manifest
+        run: python scripts/build-release.py --docker-only --output "$RUNNER_TEMP/distribution"

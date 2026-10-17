@@ -1,13 +1,12 @@
 """Installer regression tests; Docker calls are intercepted, no volumes are touched."""
 
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import tempfile
 import unittest
-
+from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 SECRETS = ('POSTGRES_PASSWORD', 'REDIS_PASSWORD', 'MINIO_ROOT_PASSWORD', 'WEBUI_SECRET_KEY', 'SEARXNG_SECRET')
@@ -19,6 +18,7 @@ class InstallerTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         (self.root / 'scripts').mkdir()
+        shutil.copytree(REPO / 'scripts/lib', self.root / 'scripts/lib')
         (self.root / 'backend').mkdir()
         shutil.copy(REPO / 'package.json', self.root / 'package.json')
         shutil.copy(REPO / 'scripts/install-docker.sh', self.root / 'scripts/install-docker.sh')
@@ -106,12 +106,16 @@ class InstallerTests(unittest.TestCase):
         self.assertNotIn(' build', calls)
 
     def test_check_mode_never_builds_or_restarts_services(self):
+        self.assertEqual(self.run_installer('--init-only').returncode, 0)
+        original = (self.root / '.env').read_bytes()
+        self.calls.unlink()
         result = self.run_installer('--check')
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = self.calls.read_text()
         self.assertIn('exec -T open-webui python check_stack.py', calls)
         self.assertNotIn(' up ', calls)
         self.assertNotIn(' build', calls)
+        self.assertEqual((self.root / '.env').read_bytes(), original)
 
     def wizard_answers(
         self,
@@ -280,6 +284,8 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse([p for p in self.root.glob('.env.*') if p.name != '.env.example'])
 
     def test_check_flag_never_prompts_even_with_interactive_flag(self):
+        self.assertEqual(self.run_installer('--init-only').returncode, 0)
+        self.calls.unlink()
         result = self.run_installer('--interactive', '--check', input='')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('[1/6]', result.stdout)
@@ -290,6 +296,46 @@ class InstallerTests(unittest.TestCase):
         result = self.run_installer('--build')
         self.assertEqual(result.returncode, 2)
         self.assertIn('完整源码包', result.stderr)
+        self.assertNotIn(' build', self.calls.read_text())
+
+    def test_check_does_not_generate_a_missing_environment(self):
+        result = self.run_installer('--check')
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse((self.root / '.env').exists())
+
+    def test_export_spacing_comments_and_literal_secrets_survive_rerun(self):
+        original = (
+            " export POSTGRES_PASSWORD = 'original-password' # retained\n"
+            'OPENAI_API_KEY=first\nOPENAI_API_KEY=last # actual value\n'
+        )
+        (self.root / '.env').write_text(original)
+        result = self.run_installer('--init-only')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(original, (self.root / '.env').read_text())
+        self.assertNotIn('POSTGRES_PASSWORD=', (self.root / '.env').read_text())
+
+    def test_active_lock_prevents_a_second_writer(self):
+        lock = self.root / '.env.nefex-lock'
+        lock.mkdir()
+        (lock / 'owner.pid').write_text(str(os.getpid()))
+        result = self.run_installer('--init-only')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / '.env').exists())
+        self.assertTrue(lock.exists())
+
+    def test_stale_lock_is_recovered(self):
+        lock = self.root / '.env.nefex-lock'
+        lock.mkdir()
+        (lock / 'owner.pid').write_text('99999999')
+        result = self.run_installer('--init-only')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(lock.exists())
+
+    def test_mixed_source_and_distribution_versions_are_not_built(self):
+        (self.root / 'VERSION').write_text('0.1.0\n')
+        result = self.run_installer('--build')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('源码版本不同', result.stderr)
         self.assertNotIn(' build', self.calls.read_text())
 
 

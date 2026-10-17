@@ -13,6 +13,9 @@ check_only=false
 gpu=false
 gpu_arg=auto
 interactive=auto
+maintenance=false
+original_args=("$@")
+source "$ROOT/scripts/lib/docker-common.sh"
 
 usage() {
   cat <<'EOF'
@@ -26,7 +29,14 @@ Usage: ./scripts/install-docker.sh [OPTIONS]
   --no-build         仅使用本地缓存镜像，不拉取或构建
   --gpu              启用 NVIDIA CUDA（需要 Container Toolkit）
   --cpu              使用 CPU 镜像
-  --check            仅检查已运行服务，不启动或修改服务
+  --check            只读检查服务，不修改配置
+  --update           更新旧安装（默认获取最新正式版）
+  --to VERSION       指定更新版本，例如 v0.12.6
+  --backup           创建完整配置与数据卷备份
+  --rollback PATH    从指定备份恢复配置、数据和镜像
+  --install-dir PATH 维护另一个安装目录
+  --local            使用当前安装包作为更新来源
+  --yes              无交互确认（同 --non-interactive）
   -h, --help         显示帮助
 
 非终端输入自动保持非交互模式。已有配置和数据卷保留；密钥不会显示在摘要中。
@@ -36,7 +46,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --interactive) interactive=true ;;
-    --non-interactive) interactive=false ;;
+    --non-interactive|--yes) interactive=false ;;
     --init-only) init_only=true ;;
     --env-file)
       [[ $# -ge 2 ]] || { echo 'Missing --env-file path' >&2; exit 2; }
@@ -46,11 +56,19 @@ while [[ $# -gt 0 ]]; do
     --gpu) gpu_arg=true ;;
     --cpu) gpu_arg=false ;;
     --check) check_only=true ;;
+    --update|--backup|--list-backups|--local) maintenance=true ;;
+    --rollback|--to|--install-dir|--backup-dir|--wait-timeout)
+      [[ $# -ge 2 ]] || { echo "Missing $1 value" >&2; exit 2; }
+      maintenance=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage; exit 2 ;;
   esac
   shift
 done
+
+if [[ "$maintenance" == true ]]; then
+  exec bash "$ROOT/scripts/update-docker.sh" "${original_args[@]}"
+fi
 
 [[ "$ENV_FILE" == /* ]] || ENV_FILE="$PWD/$ENV_FILE"
 command -v docker >/dev/null || { echo '请先安装 Docker Engine/Desktop 和 Compose v2。' >&2; exit 1; }
@@ -65,42 +83,45 @@ fi
 cleanup() {
   [[ -z "$CONFIG_FILE" ]] || rm -f -- "$CONFIG_FILE"
   [[ -z "$pending_file" ]] || rm -f -- "$pending_file"
+  release_lock
 }
 trap 'installer_exit=$?; cleanup; exit "$installer_exit"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 umask 077
+if [[ "$check_only" == true ]]; then
+  [[ -f "$ENV_FILE" ]] || { echo '未找到已有配置，请先安装。' >&2; exit 2; }
+  case "$(read_env NEFEX_INSTALL_GPU "$ENV_FILE")" in true) gpu=true ;; esac
+  [[ "$gpu_arg" == auto ]] || gpu="$gpu_arg"
+  export WEBUI_ENV_FILE="$ENV_FILE"
+  compose=(docker compose --project-directory "$ROOT" --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yaml")
+  if [[ "$gpu" == true ]]; then compose+=(-f "$ROOT/docker-compose.gpu.yaml"); fi
+  "${compose[@]}" config --quiet
+  "${compose[@]}" exec -T open-webui python check_stack.py
+  "${compose[@]}" ps -a
+  exit 0
+fi
+if [[ "$interactive" == true && -t 0 && -t 1 && -f "$ENV_FILE" && " ${original_args[*]:-} " != *' --interactive '* ]]; then
+  echo '检测到已有配置：1 安装/调整配置；2 更新；3 只读检查；4 备份；5 列出备份；6 回滚；0 退出'
+  printf '选择操作 [1]: '
+  IFS= read -r selection || exit 130
+  case "${selection:-1}" in
+    1) ;;
+    2) exec bash "$ROOT/scripts/update-docker.sh" --update --interactive --env-file "$ENV_FILE" ;;
+    3) exec bash "$ROOT/scripts/install-docker.sh" --check --env-file "$ENV_FILE" ;;
+    4) exec bash "$ROOT/scripts/update-docker.sh" --backup --interactive --env-file "$ENV_FILE" ;;
+    5) exec bash "$ROOT/scripts/update-docker.sh" --list-backups --interactive --env-file "$ENV_FILE" ;;
+    6)
+      printf '备份目录: '
+      IFS= read -r snapshot || exit 130
+      [[ -n "$snapshot" ]] || exit 130
+      exec bash "$ROOT/scripts/update-docker.sh" --rollback "$snapshot" --interactive --env-file "$ENV_FILE" ;;
+    *) exit 130 ;;
+  esac
+fi
+acquire_lock "$ENV_FILE"
 CONFIG_FILE=$(mktemp "${ENV_FILE}.XXXXXX")
 if [[ -f "$ENV_FILE" ]]; then cp "$ENV_FILE" "$CONFIG_FILE"; else cp "$ROOT/.env.example" "$CONFIG_FILE"; fi
-
-# Read data, never source/eval a dotenv file. Decode values written by this installer.
-read_env() {
-  local raw
-  raw=$(awk -v key="$1" 'index($0, key "=") == 1 {print substr($0, length(key) + 2); exit}' "${2:-$CONFIG_FILE}")
-  case "$raw" in
-    \"*\")
-      raw=${raw#\"}; raw=${raw%\"}
-      raw=${raw//\\\"/\"}; raw=${raw//\\\\/\\}; raw=${raw//\$\$/\$}
-      ;;
-    \'*\') raw=${raw#\'}; raw=${raw%\'}; raw=${raw//\\\'/\'} ;;
-  esac
-  printf '%s' "$raw"
-}
-
-write_env() {
-  local key="$1" value="$2" escaped
-  pending_file=$(mktemp "${CONFIG_FILE}.XXXXXX")
-  awk -v key="$key" 'index($0, key "=") != 1 {print}' "$CONFIG_FILE" > "$pending_file"
-  case "$value" in
-    *[!a-zA-Z0-9_./:@+-]*|'')
-      escaped=${value//\\/\\\\}; escaped=${escaped//\"/\\\"}; escaped=${escaped//\$/\$\$}
-      printf '%s="%s"\n' "$key" "$escaped" >> "$pending_file"
-      ;;
-    *) printf '%s=%s\n' "$key" "$value" >> "$pending_file" ;;
-  esac
-  mv "$pending_file" "$CONFIG_FILE"
-  pending_file=''
-}
 
 cancel_input() { echo; echo '已取消，原配置未改动。' >&2; exit 130; }
 ask() {
@@ -228,6 +249,7 @@ if [[ "$interactive" == true ]]; then
     while true; do
       ask_secret '管理员密码（至少 12 字符）' "$old_password" '保留现有密码或自动生成'
       if [[ -z "$REPLY" ]]; then REPLY=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n'); break; fi
+      if [[ -n "$old_password" && "$REPLY" == "$old_password" ]]; then break; fi
       if (( ${#REPLY} >= 12 )); then break; fi
       echo '请使用至少 12 个字符。'
     done
@@ -258,6 +280,13 @@ fi
 if [[ "$build" == true && ( ! -f "$ROOT/package.json" || ! -d "$ROOT/backend" ) ]]; then
   echo '源码构建需要完整源码包；镜像安装包请选择拉取发布镜像。' >&2
   exit 2
+fi
+
+if [[ "$build" == true && -f "$ROOT/VERSION" ]]; then
+  source_version=$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1)
+  [[ "$source_version" == "$(tr -d '\r\n' < "$ROOT/VERSION")" ]] || {
+    echo '部署文件与源码版本不同；请先同步完整源码，再选择 --build。' >&2; exit 2;
+  }
 fi
 
 if [[ "$interactive" == true || "$gpu_arg" != auto ]]; then write_env NEFEX_INSTALL_GPU "$gpu"; fi

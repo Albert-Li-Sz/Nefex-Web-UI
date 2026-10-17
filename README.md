@@ -9,9 +9,8 @@
 需要 Docker Engine / Docker Desktop 和 Compose v2。
 
 ```bash
-git clone --depth 1 https://github.com/Albert-Li-Sz/Nefex-Web-UI.git
-cd Nefex-Web-UI
-./scripts/install-docker.sh
+curl -fL https://github.com/Albert-Li-Sz/Nefex-Web-UI/releases/latest/download/install.sh -o /tmp/nefex-install.sh
+bash /tmp/nefex-install.sh --install-dir ./nefex-web-ui
 ```
 
 在终端直接运行会进入中文交互向导，依次配置 CPU/CUDA、镜像方式、端口与访问地址、模型接口、SearXNG/DeepSeek 和管理员账户。密钥隐藏输入，确认前显示配置摘要；取消不会修改原配置。默认拉取成品镜像，自动部署应用、PostgreSQL / pgvector、MinIO、Redis、SearXNG，生成随机密钥和私有存储桶，并等待健康检查及真实服务检查通过。
@@ -24,6 +23,28 @@ cd Nefex-Web-UI
 # 自动化安装，不显示交互提示
 ./scripts/install-docker.sh --non-interactive
 ```
+
+## 更新已有安装
+
+v0.12.6 起，安装器支持更新、完整备份和回滚。已有配置的终端用户直接运行安装器可选择维护操作：
+
+```bash
+./scripts/install-docker.sh --update
+# 指定版本；自动化执行另加 --non-interactive
+./scripts/install-docker.sh --update --to v0.12.6
+./scripts/install-docker.sh --backup
+./scripts/install-docker.sh --list-backups
+./scripts/install-docker.sh --rollback /完整备份目录
+```
+
+v0.12.4 / v0.12.5 没有更新命令时，下载新版入口，指定原安装目录即可：
+
+```bash
+curl -fL https://github.com/Albert-Li-Sz/Nefex-Web-UI/releases/latest/download/install.sh -o /tmp/nefex-install.sh
+bash /tmp/nefex-install.sh --update --install-dir /opt/nefex-web-ui
+```
+
+更新前校验发布包、拉取目标镜像，随后暂停服务并保存配置及全部数据卷。保留原项目名、密钥、账号、文件和后台设置；失败自动恢复。回滚恢复到备份时的数据，操作前另存当前状态。支持现有 Nefex PostgreSQL/MinIO Docker 布局；SQLite 或本地文件旧布局需单独迁移。详细行为与备份说明见[安装文档](docs/docker-install.md#管理更新与备份)。
 
 - [完整安装、配置、备份与迁移](docs/docker-install.md)
 - [验证记录与测试范围](docs/docker-validation.md)

@@ -7,12 +7,13 @@ Nefex Web UI 通过 OpenAI 兼容接口接入模型。Ollama 原生接口、连�
 需要 Docker Engine / Docker Desktop，以及支持 `up --wait` 的 Compose v2。支持 Linux amd64 / arm64 与 macOS Docker Desktop；默认安装只拉取镜像，无需 Node.js、Python 或 Go。请预留至少 20 GB 磁盘空间，运行建议分配至少 4 GB 内存。只有使用 `--build` 源码构建时才需要至少 8 GB 内存；默认前端构建堆上限为 6 GB，可通过 `BUILD_NODE_OPTIONS=--max-old-space-size=8192` 调整。
 
 ```bash
-git clone --depth 1 https://github.com/Albert-Li-Sz/Nefex-Web-UI.git
-cd Nefex-Web-UI
-./scripts/install-docker.sh
+curl -fL https://github.com/Albert-Li-Sz/Nefex-Web-UI/releases/latest/download/install.sh -o /tmp/nefex-install.sh
+bash /tmp/nefex-install.sh --install-dir ./nefex-web-ui
 ```
 
-在交互终端直接运行脚本会进入中文安装向导。脚本创建权限为 `600` 的 `.env`，为数据库、Redis、MinIO、应用会话和搜索自动生成独立随机密钥，拉取 Nefex Web UI、MinIO 和其他上游镜像，启动服务，等待健康检查，然后执行真实服务检查。再次执行会保留配置、密钥和数据卷。
+独立入口下载最新正式版 Docker 安装包和 `SHA256SUMS`，校验通过后解压到空目录，再进入中文安装向导。也可从 Release 手动解压 Docker 安装包，或克隆完整仓库后执行 `./scripts/install-docker.sh`。源码构建需要完整仓库或源码包。
+
+脚本创建权限为 `600` 的 `.env`，为数据库、Redis、MinIO、应用会话和搜索自动生成独立随机密钥，拉取 Nefex Web UI、MinIO 和其他上游镜像，启动服务，等待健康检查，然后执行真实服务检查。再次执行会保留配置、密钥和数据卷。
 
 ### 交互安装向导
 
@@ -38,7 +39,7 @@ cd Nefex-Web-UI
 ./scripts/install-docker.sh --interactive --env-file ./production.env
 ```
 
-终端直接运行默认进入引导；非终端输入保持非交互模式，`--init-only` 和 `--check` 默认也不显示提示。`--check` 始终只检查服务，配合 `--interactive` 也不会打开安装引导。
+首次安装在终端直接运行默认进入引导；已有配置时先显示安装/调整配置、更新、检查、备份、列出备份和回滚菜单。`--interactive` 显式进入六步配置向导。非终端安装保持非交互模式，`--init-only` 和 `--check` 默认也不显示提示。`--check` 始终只检查服务，配合 `--interactive` 也不会打开安装引导或改写配置。
 
 应用默认地址为 <http://localhost:3000>，安装结束会显示实际地址。模型接口可在「管理员设置 → 连接」填写。也可先生成配置再编辑：
 
@@ -110,19 +111,64 @@ DEEPSEEK_SEARCH_NEED_CONTENT=false
 
 未填写 DeepSeek 密钥时保持默认 `searxng` / `playwright` 即可。切换为 DeepSeek 后，接口失败会显示错误，方便检查凭据和余额。SearXNG 服务仍随完整 Docker 安装部署，安装检查继续验证它的可用性。
 
-## 管理、升级与备份
+## 管理、更新与备份
 
 ```bash
 docker compose ps -a
 docker compose logs -f open-webui
 docker compose logs --tail 100 searxng
-# 更新并拉取发布镜像
-./scripts/install-docker.sh
+# 更新到最新正式版
+./scripts/install-docker.sh --update
+# 固定目标版本
+./scripts/install-docker.sh --update --to v0.12.6
+# 自动化执行，不询问确认
+./scripts/install-docker.sh --update --non-interactive
 # 停止服务，保留全部数据
 docker compose down
 ```
 
-新安装默认应用镜像固定为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.5`，CUDA 镜像为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.5-cuda`，MinIO 为 `ghcr.io/albert-li-sz/nefex-web-ui-minio:RELEASE.2025-10-15T17-29-55Z`；可在 `.env` 中覆盖 `WEBUI_IMAGE`、`MINIO_IMAGE`。`latest` / `main` 为 CPU 完整镜像，支持 amd64 / arm64；`cuda` 为 amd64 CUDA 镜像。`git-提交短号` 标签可固定应用版本，生产环境还可固定镜像摘要。
+更新会先下载并校验目标发布包、拉取并核对目标镜像版本；这时原服务继续运行。确认后暂停服务，为配置和全部项目数据卷创建一致快照，再替换安装文件并启动新版本。容器健康检查和完整服务检查都通过才报告成功；任一步失败会恢复原配置、数据与镜像，并以失败状态退出。
+
+`.env` 中的密钥、自定义配置和端口保留；后台保存的模型、搜索及用户配置仍保存在 PostgreSQL。未显式写入项目名的旧安装会从原容器识别名称并固定，继续使用原数据卷。更新只切换应用镜像，PostgreSQL、MinIO、Redis 和 SearXNG 固定为原运行镜像摘要，基础服务升级应另行安排。CPU/CUDA 默认沿用原模式。
+
+更新和备份会产生一段停服时间，主要取决于数据量和磁盘速度。脚本检查备份空间、拒绝共享或外部卷，并为同一个配置文件设置维护锁；终止进程留下的失效锁可自动恢复。不会删除项目数据卷。
+
+### 更新 v0.12.4 / v0.12.5
+
+旧安装器没有 `--update` 时，在任意目录下载最新入口，将 `--install-dir` 指向已有 `.env` 和 `docker-compose.yaml` 的目录：
+
+```bash
+curl -fL https://github.com/Albert-Li-Sz/Nefex-Web-UI/releases/latest/download/install.sh -o /tmp/nefex-install.sh
+bash /tmp/nefex-install.sh --update --install-dir /opt/nefex-web-ui
+```
+
+也可将新版 Docker 安装包解压到另一个目录，使用其中的脚本维护原安装。此方式无需重复下载安装包，仍会拉取所需应用镜像：
+
+```bash
+./scripts/install-docker.sh --update --local --install-dir /opt/nefex-web-ui
+```
+
+支持现有 Nefex PostgreSQL/MinIO 完整 Docker 服务栈，包括旧项目名。原始 Open WebUI SQLite、本地文件存储、共享数据库/外部卷等布局不能直接使用此更新流程，迁移说明见下一节。部署更新会替换安装清单内的 Compose、SearXNG 配置和安装文件；有定制修改时应先核对，原文件会保存在快照中。
+
+### 完整备份与回滚
+
+```bash
+./scripts/install-docker.sh --backup
+./scripts/install-docker.sh --list-backups
+./scripts/install-docker.sh --rollback /opt/nefex-web-ui/backups/备份目录
+# 备份到另一块磁盘；自动化操作另加 --non-interactive
+./scripts/install-docker.sh --backup --backup-dir /mnt/backup/nefex
+```
+
+默认快照保存在原安装目录的 `backups/`，每个目录权限为 `700`，包含 `.env`、安装配置、固定镜像引用、校验文件及全部项目数据卷（数据库、文件、向量、缓存与匿名配置卷）。快照包含密钥和用户数据，应保存到受控的存储位置；脚本不会自动清理历史快照。
+
+回滚先校验备份，并为当前状态另建完整快照，然后恢复所选快照的配置、镜像和数据。快照限定原安装路径与项目名，用于原地恢复。恢复后的数据回到备份时点，后续新增或修改的数据可在操作前创建的快照中保留。直接用 `--to` 降级会被拒绝，数据库降级应恢复对应版本快照。恢复旧版后，安装目录里的脚本也会回到旧版；再次更新或回滚可使用另行下载的新版入口。
+
+建议将完整快照复制到异地并定期演练恢复。只备份 PostgreSQL 而不保留 MinIO 文件，会造成数据库记录与附件不一致。
+
+### 镜像与源码构建
+
+新安装默认应用镜像固定为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.6`，CUDA 镜像为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.6-cuda`，MinIO 为 `ghcr.io/albert-li-sz/nefex-web-ui-minio:RELEASE.2025-10-15T17-29-55Z`；可在 `.env` 中覆盖 `WEBUI_IMAGE`、`MINIO_IMAGE`。`latest` / `main` 为 CPU 完整镜像，支持 amd64 / arm64；`cuda` 为 amd64 CUDA 镜像。`git-提交短号` 标签可固定应用版本，生产环境还可固定镜像摘要。
 
 需要构建本地修改时：
 
@@ -132,9 +178,11 @@ WEBUI_IMAGE=nefex-web-ui:local MINIO_IMAGE=nefex-minio:local ./scripts/install-d
 
 `--no-build` 仅使用本地已缓存镜像，不拉取、不构建；`--check` 仅检查运行中的服务。自定义 Python 依赖或模型的全量构建文件为 `deploy/Dockerfile.source`，运行 `docker build -f deploy/Dockerfile.source -t nefex-web-ui:custom .`。默认构建复用的运行环境必须与 `backend/requirements.txt` 对应版本一致；更改 Python 依赖时应使用全量构建。
 
-GitHub Actions 在 main、版本标签和手动触发时构建并发布应用及 MinIO，多架构摘要合并前会运行后端回归测试。默认安装不会使用原始 Open WebUI 应用成品，因为它仍包含本分支已经移除的接入。
+部署更新只更新安装清单内的运行配置与脚本，不改写现有应用源码。当 `VERSION` 与 `package.json` 不一致时会拒绝 `--build`；需要源码构建时请使用同版本的完整源码包或 Git 标签。
 
-生产备份应同时保留 `.env`、PostgreSQL 的 `pg_dump`、MinIO 数据、应用数据卷。Redis 与 SearXNG 数据卷也可一并备份。`docker compose down` 保留数据；`docker compose down -v` 会永久删除该项目的全部数据卷。
+GitHub Actions 在版本标签和手动触发时构建应用镜像，多架构摘要合并前运行安装器与后端回归测试。Linux/macOS 的安装器回归在 main 和 PR 独立执行；MinIO 源码未变化且已发布镜像可用时直接复用。默认安装不会使用原始 Open WebUI 应用成品，因为它仍包含本分支已经移除的接入。
+
+`docker compose down` 保留数据；`docker compose down -v` 会永久删除该项目的全部数据卷。
 
 ## 从旧安装迁移
 

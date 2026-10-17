@@ -2,9 +2,7 @@ name: Build and publish Nefex images
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
-    paths-ignore: ['docs/**', '*.md', 'LICENSE*']
   workflow_dispatch:
 
 concurrency:
@@ -52,7 +50,7 @@ jobs:
           python-version: '3.11'
       - name: Installer regression tests
         run: |
-          bash -n scripts/install-docker.sh
+          for file in install.sh scripts/install-docker.sh scripts/update-docker.sh scripts/lib/docker-common.sh; do bash -n "$file"; done
           python -m unittest discover -s scripts/tests -v
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -60,6 +58,24 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check whether MinIO needs rebuilding
+        if: matrix.variant == 'cpu'
+        id: minio-plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          rebuild=true
+          previous=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          if [[ "$previous" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && \
+            git fetch --no-tags --depth=1 origin "refs/tags/$previous:refs/tags/$previous"; then
+            if git diff --quiet "$previous" HEAD -- deploy/minio && \
+              docker buildx imagetools inspect "$MINIO_IMAGE:RELEASE.2025-10-15T17-29-55Z" >/dev/null; then
+              rebuild=false
+            fi
+          fi
+          echo "rebuild=$rebuild" >> "$GITHUB_OUTPUT"
+          echo "MinIO rebuild required: $rebuild"
       - name: Build changed application on the official runtime
         id: app
         uses: docker/build-push-action@v6
@@ -86,7 +102,7 @@ jobs:
           docker run --rm --entrypoint sh "${APP_IMAGE}@${APP_DIGEST}" -ec \
             'test ! -f /app/backend/open_webui/routers/ollama.py; test -f /app/build/pyodide/pyodide.mjs'
       - name: Build patched MinIO release
-        if: matrix.variant == 'cpu'
+        if: matrix.variant == 'cpu' && steps.minio-plan.outputs.rebuild == 'true'
         id: minio
         uses: docker/build-push-action@v6
         with:
@@ -130,6 +146,7 @@ jobs:
       - name: Publish and inspect multi-architecture images
         shell: bash
         run: |
+          shopt -s nullglob
           app="ghcr.io/${GITHUB_REPOSITORY,,}"
           minio="${app}-minio"
           short="${GITHUB_SHA:0:7}"
@@ -145,7 +162,9 @@ jobs:
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"
           refs=()
           for digest in digests/minio/*; do refs+=("${minio}@sha256:$(basename "$digest")"); done
-          docker buildx imagetools create -t "$minio:latest" -t "$minio:RELEASE.2025-10-15T17-29-55Z" "${refs[@]}"
+          if (( ${#refs[@]} )); then
+            docker buildx imagetools create -t "$minio:latest" -t "$minio:RELEASE.2025-10-15T17-29-55Z" "${refs[@]}"
+          fi
           docker buildx imagetools inspect "$app:latest"
           docker buildx imagetools inspect "$app:cuda"
           docker buildx imagetools inspect "$minio:RELEASE.2025-10-15T17-29-55Z"

@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.6] - 2026-10-18
+
+### Added
+
+- **Preserving Docker updates.** Upgrade existing v0.12.4/v0.12.5 PostgreSQL/MinIO installations to the latest or a selected release. Preserve legacy Compose project names, configuration, service secrets, administrator credentials, stored settings and data. Pull and verify the application before downtime; retain exact existing infrastructure images.
+- **Consistent backups and rollback.** Cold snapshots include configuration, exact image references and every project data volume, including image-declared anonymous configuration volumes. Verify snapshot hashes before restoration. Failed updates restore the previous snapshot automatically; manual rollback first saves the current state.
+- **Standalone release installer.** Download and SHA256-verify a lightweight release bundle without Git, Node.js or host Python. Existing installations automatically select update mode. Publish the entrypoint as a separate release asset.
+- **Maintenance regression CI.** Exercise installation, updates, failed updates, backup validation and bootstrap downloads on Linux and macOS; validate the runtime bundle manifest.
+
+### Fixed
+
+- Make health checks read-only, serialize configuration writers, reclaim interrupted-process locks and preserve valid dotenv quoting, comments and duplicate-key semantics.
+- Refuse source builds when a deployment-only update has a different version from the local application source; reject direct data downgrades and unsupported/shared-volume layouts before stopping services.
+
+### Changed
+
+- Fresh installations pin application images to v0.12.6. Existing terminal installations offer install, update, check, backup and rollback operations.
+- Build published application images on release tags or manual dispatch. Reuse the published MinIO image when its source is unchanged, avoiding duplicate builds for the same application commit.
+
 ## [0.12.5] - 2026-10-18
 
 ### Added
