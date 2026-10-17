@@ -26,12 +26,12 @@ bash /tmp/nefex-install.sh --install-dir ./nefex-web-ui
 
 ## 更新已有安装
 
-v0.12.6 起，安装器支持更新、完整备份和回滚。已有配置的终端用户直接运行安装器可选择维护操作：
+v0.12.7 起，安装器支持更新、完整备份和回滚。已有配置的终端用户直接运行安装器可选择维护操作：
 
 ```bash
 ./scripts/install-docker.sh --update
 # 指定版本；自动化执行另加 --non-interactive
-./scripts/install-docker.sh --update --to v0.12.6
+./scripts/install-docker.sh --update --to v0.12.7
 ./scripts/install-docker.sh --backup
 ./scripts/install-docker.sh --list-backups
 ./scripts/install-docker.sh --rollback /完整备份目录

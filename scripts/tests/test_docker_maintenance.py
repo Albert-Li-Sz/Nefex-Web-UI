@@ -78,7 +78,7 @@ class MaintenanceTests(unittest.TestCase):
         self.assertIn('COMPOSE_PROJECT_NAME=legacy-project', config)
         self.assertIn('POSTGRES_IMAGE=registry.test/old-postgres-image@sha256:', config)
         self.assertIn('WEBUI_IMAGE=ghcr.io/albert-li-sz/nefex-web-ui@sha256:', config)
-        self.assertEqual((self.root / 'VERSION').read_text().strip(), '0.12.6')
+        self.assertEqual((self.root / 'VERSION').read_text().strip(), '0.12.7')
         self.assertFalse((self.root / 'injected').exists())
         self.assertNotIn('postgres-fixture-secret', result.stdout + result.stderr)
         self.assertEqual(len(self.snapshots()), 1)
@@ -89,7 +89,7 @@ class MaintenanceTests(unittest.TestCase):
         (self.root / 'VERSION').write_text('0.12.4\n')
         result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.12.4')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('v0.12.4 → v0.12.6', result.stdout)
+        self.assertIn('v0.12.4 → v0.12.7', result.stdout)
         self.assertIn('session-fixture-secret', (self.root / '.env').read_text())
 
     def test_update_detects_existing_cuda_mode(self):
@@ -160,6 +160,27 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual((self.root / '.env').read_text(), self.original)
         self.assertEqual((self.root / 'VERSION').read_text().strip(), '0.12.5')
 
+    def test_empty_checksum_manifest_cannot_bypass_restore_validation(self):
+        self.assertEqual(self.run_maintenance('--backup', '--non-interactive').returncode, 0)
+        snapshot = self.snapshots()[0].parent
+        (snapshot / 'SHA256SUMS').write_text('')
+        self.calls.unlink()
+        result = self.run_maintenance('--rollback', str(snapshot), '--non-interactive')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any('stop' in e for e in self.events()))
+
+    def test_omitted_volume_checksum_is_rejected_before_stopping_services(self):
+        self.assertEqual(self.run_maintenance('--backup', '--non-interactive').returncode, 0)
+        snapshot = self.snapshots()[0].parent
+        sums = snapshot / 'SHA256SUMS'
+        sums.write_text(
+            '\n'.join(line for line in sums.read_text().splitlines() if not line.endswith('volume-1.tar.gz')) + '\n'
+        )
+        self.calls.unlink()
+        result = self.run_maintenance('--rollback', str(snapshot), '--non-interactive')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any('stop' in e for e in self.events()))
+
     def test_external_volumes_are_rejected_before_the_stack_is_stopped(self):
         result = self.run_maintenance('--backup', '--non-interactive', EXTERNAL_VOLUME='1')
         self.assertNotEqual(result.returncode, 0)
@@ -205,13 +226,13 @@ class MaintenanceTests(unittest.TestCase):
         self.assertFalse(self.calls.exists())
 
     def test_local_target_must_match_requested_version(self):
-        result = self.run_maintenance('--update', '--local', '--to', 'v0.12.7', '--non-interactive')
+        result = self.run_maintenance('--update', '--local', '--to', 'v0.12.8', '--non-interactive')
         self.assertEqual(result.returncode, 2)
         self.assertFalse(any(e[0] == 'pull' for e in self.events()))
 
     def test_same_version_is_noop(self):
-        (self.root / 'VERSION').write_text('0.12.6\n')
-        result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.12.6')
+        (self.root / 'VERSION').write_text('0.12.7\n')
+        result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.12.7')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any('stop' in e or e[0] == 'pull' for e in self.events()))
         self.assertEqual((self.root / '.env').read_text(), self.original)

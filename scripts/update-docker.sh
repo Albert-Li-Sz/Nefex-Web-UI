@@ -197,13 +197,27 @@ resume_snapshot() (
   fi
 )
 validate_snapshot() {
-  local snapshot="$1" file expected actual
+  local snapshot="$1" file expected actual volume logical archive matches
+  local required=(format project.name root.path helper.image environment.env files.present files.absent configuration.tar.gz images.tsv running.services volumes.tsv compose.yaml)
   [[ "$snapshot" != *','* && "$snapshot" != *$'\n'* ]] || return 1
   [[ -d "$snapshot" && -f "$snapshot/complete" && -f "$snapshot/SHA256SUMS" ]] || { echo '备份不完整。' >&2; return 1; }
+  for file in "${required[@]}"; do
+    [[ -f "$snapshot/$file" && ! -L "$snapshot/$file" ]] || { echo "备份缺少文件：$file" >&2; return 1; }
+  done
   [[ "$(cat "$snapshot/format")" == 1 && "$(cat "$snapshot/project.name")" == "$project" && "$(cat "$snapshot/root.path")" == "$ROOT" ]] || {
     echo '备份格式、项目名或安装路径不匹配。' >&2; return 1;
   }
-  while read -r expected file; do
+  while IFS=$'\t' read -r volume logical archive; do
+    [[ "$volume" =~ ^[a-zA-Z0-9_.-]+$ && "$logical" =~ ^[a-zA-Z0-9_.-]+$ && "$archive" =~ ^volume-[0-9]+\.tar\.gz$ ]] || return 1
+    required+=("$archive")
+  done < "$snapshot/volumes.tsv"
+  (( ${#required[@]} >= 17 )) || { echo '备份缺少完整的数据卷记录。' >&2; return 1; }
+  for file in "${required[@]}"; do
+    matches=$(awk -v name="$file" '$2 == name {n++} END {print n+0}' "$snapshot/SHA256SUMS")
+    [[ "$matches" == 1 ]] || { echo "备份校验清单缺少或重复条目：$file" >&2; return 1; }
+  done
+  [[ "$(awk 'END {print NR}' "$snapshot/SHA256SUMS")" -eq "${#required[@]}" ]] || { echo '备份校验清单条目不匹配。' >&2; return 1; }
+  while read -r expected file || [[ -n "${expected:-}${file:-}" ]]; do
     [[ "$expected" =~ ^[0-9a-f]{64}$ && "$file" =~ ^[a-zA-Z0-9_.-]+$ && -f "$snapshot/$file" && ! -L "$snapshot/$file" ]] || return 1
     actual=$(nefex_hash "$snapshot/$file")
     [[ "$actual" == "$expected" ]] || { echo "备份校验失败：$file" >&2; return 1; }

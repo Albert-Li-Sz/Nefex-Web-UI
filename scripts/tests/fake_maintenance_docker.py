@@ -30,10 +30,10 @@ if args[0] == 'compose':
     elif command == 'config' and '--quiet' not in args:
         print('services:\n  open-webui:\n    image: fixture\n')
     elif command == 'up' and os.environ.get('FAIL_NEW_UP') == '1':
-        if str(root / 'docker-compose.yaml') in args and (root / 'VERSION').read_text().strip() == '0.12.6':
+        if str(root / 'docker-compose.yaml') in args and (root / 'VERSION').read_text().strip() == '0.12.7':
             sys.exit(42)
     elif command == 'exec' and os.environ.get('FAIL_NEW_CHECK') == '1':
-        if (root / 'VERSION').read_text().strip() == '0.12.6':
+        if (root / 'VERSION').read_text().strip() == '0.12.7':
             sys.exit(43)
     sys.exit(0)
 if args[0] == 'info':
@@ -91,7 +91,7 @@ if args[0] == 'pull':
 if args[0] == 'run':
     entrypoint = args[args.index('--entrypoint') + 1]
     if entrypoint == 'python':
-        print('0.12.6' if any(x.startswith('ghcr.io/') for x in args) else os.environ.get('OLD_VERSION', '0.12.5'))
+        print('0.12.7' if any(x.startswith('ghcr.io/') for x in args) else os.environ.get('OLD_VERSION', '0.12.5'))
     elif entrypoint == 'du':
         print('1\t/data')
     elif entrypoint == 'tar':

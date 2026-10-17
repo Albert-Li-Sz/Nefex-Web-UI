@@ -62,7 +62,7 @@ nefex_bootstrap() {
         [[ $# -ge 2 ]] || return 2
         action=--rollback; forwarded+=("$1" "$2"); shift ;;
       -h|--help)
-        echo 'Usage: bash install.sh [--install-dir PATH] [--update] [--to v0.12.6] [installer options]'
+        echo 'Usage: bash install.sh [--install-dir PATH] [--update] [--to v0.12.7] [installer options]'
         echo '已有安装默认更新；首次安装进入配置向导。--backup、--rollback PATH、--non-interactive 也可用。'
         return 0 ;;
       *) forwarded+=("$1") ;;
