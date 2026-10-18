@@ -120,7 +120,7 @@ docker compose logs --tail 100 searxng
 # 更新到最新正式版
 ./scripts/install-docker.sh --update
 # 固定目标版本
-./scripts/install-docker.sh --update --to v0.12.8
+./scripts/install-docker.sh --update --to v0.12.9
 # 自动化执行，不询问确认
 ./scripts/install-docker.sh --update --non-interactive
 # 停止服务，保留全部数据
@@ -130,6 +130,8 @@ docker compose down
 更新会先下载并校验目标发布包、拉取并核对目标镜像版本；这时原服务继续运行。确认后暂停服务，为配置和全部项目数据卷创建一致快照，再替换安装文件并启动新版本。容器健康检查和完整服务检查都通过才报告成功；任一步失败会恢复原配置、数据与镜像，并以失败状态退出。
 
 `.env` 中的密钥、自定义配置和端口保留；后台保存的模型、搜索及用户配置仍保存在 PostgreSQL。未显式写入项目名的旧安装会从原容器识别名称并固定，继续使用原数据卷。更新只切换应用镜像，PostgreSQL、MinIO、Redis 和 SearXNG 固定为原运行镜像摘要，基础服务升级应另行安排。CPU/CUDA 默认沿用原模式。
+
+v0.12.9 修复目录搬迁后被 v0.12.8 的路径检查误拦的问题。容器记录的历史工作目录不必与 `--install-dir` 完全相同：安装器会核对五个服务的原密钥、数据库与存储用户名、数据卷名称和项目归属，确认是同一安装后继续沿用原项目名。没有保存项目名的旧 `.env` 也能据此识别；多组匹配或配置、数据卷不匹配时停止，并显示项目名及相关路径供检查。保留原 `.env`，不要重新初始化密钥或重命名数据卷。
 
 更新和备份会产生一段停服时间，主要取决于数据量和磁盘速度。脚本检查备份空间、拒绝共享或外部卷，并为同一个配置文件设置维护锁；终止进程留下的失效锁可自动恢复。不会删除项目数据卷。
 
@@ -168,7 +170,7 @@ bash /tmp/nefex-install.sh --update --install-dir /opt/nefex-web-ui
 
 ### 镜像与源码构建
 
-新安装默认应用镜像固定为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.8`，CUDA 镜像为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.8-cuda`，MinIO 为 `ghcr.io/albert-li-sz/nefex-web-ui-minio:RELEASE.2025-10-15T17-29-55Z`；可在 `.env` 中覆盖 `WEBUI_IMAGE`、`MINIO_IMAGE`。`latest` / `main` 为 CPU 完整镜像，支持 amd64 / arm64；`cuda` 为 amd64 CUDA 镜像。`git-提交短号` 标签可固定应用版本，生产环境还可固定镜像摘要。
+新安装默认应用镜像固定为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.9`，CUDA 镜像为 `ghcr.io/albert-li-sz/nefex-web-ui:v0.12.9-cuda`，MinIO 为 `ghcr.io/albert-li-sz/nefex-web-ui-minio:RELEASE.2025-10-15T17-29-55Z`；可在 `.env` 中覆盖 `WEBUI_IMAGE`、`MINIO_IMAGE`。`latest` / `main` 为 CPU 完整镜像，支持 amd64 / arm64；`cuda` 为 amd64 CUDA 镜像。`git-提交短号` 标签可固定应用版本，生产环境还可固定镜像摘要。
 
 需要构建本地修改时：
 

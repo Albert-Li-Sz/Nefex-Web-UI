@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.9] - 2026-10-18
+
+### Fixed
+
+- Allow maintenance after an installation directory is moved or differs from historical Compose working-directory metadata. Before accepting a different path, verify all five service secrets, database/storage identity and the exact project-owned data volumes. Continue to reject foreign projects, ambiguous matches, mismatched secrets and unsupported volume names before pulling images or stopping services.
+- Infer legacy Compose project names from matching service configuration and volumes when the old directory label no longer resolves. Report the selected project and relevant paths without exposing credentials.
+- Add regression coverage for relocated v0.12.8 and legacy installations, symlink paths and conflicting deployments. Fresh installations pin CPU/CUDA application images to v0.12.9.
+
 ## [0.12.8] - 2026-10-18
 
 ### Added

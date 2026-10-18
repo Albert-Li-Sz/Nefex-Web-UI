@@ -31,7 +31,7 @@ Usage: ./scripts/install-docker.sh [OPTIONS]
   --cpu              使用 CPU 镜像
   --check            只读检查服务，不修改配置
   --update           更新旧安装（默认获取最新正式版）
-  --to VERSION       指定更新版本，例如 v0.12.8
+  --to VERSION       指定更新版本，例如 v0.12.9
   --backup           创建完整配置与数据卷备份
   --rollback PATH    从指定备份恢复配置、数据和镜像
   --install-dir PATH 维护另一个安装目录

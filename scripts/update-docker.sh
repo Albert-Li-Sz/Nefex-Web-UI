@@ -100,6 +100,59 @@ command -v docker >/dev/null || { echo '需要 Docker 和 Compose v2。' >&2; ex
 docker compose version >/dev/null
 [[ -f "$ENV_FILE" && -f "$ROOT/docker-compose.yaml" ]] || { echo '未找到旧安装的 .env 和 docker-compose.yaml。' >&2; exit 2; }
 export WEBUI_ENV_FILE="$ENV_FILE"
+
+owned_volume() {
+  local volume="$1" expected_project="${2:-$project}" owner labels consumer
+  owner=$(docker volume inspect --format '{{index .Labels "com.docker.compose.project"}}' "$volume")
+  if [[ "$owner" != "$expected_project" ]]; then
+    # Official images may declare anonymous volumes (SearXNG: /etc/searxng).
+    labels=$(docker volume inspect --format '{{json .Labels}}' "$volume")
+    [[ "$labels" == *'"com.docker.volume.anonymous":'* ]] || return 1
+  fi
+  while IFS= read -r consumer; do
+    [[ -n "$consumer" ]] || continue
+    [[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$consumer")" == "$expected_project" ]] || return 1
+  done < <(docker ps -aq --filter "volume=$volume")
+}
+container_env() {
+  docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$1" |
+    awk -v key="$2" 'index($0,key "=")==1 {print substr($0,length(key)+2)}'
+}
+deployment_matches() {
+  # A Compose working_dir label is historical metadata, not a stable identity:
+  # relocated installs, symlinks and remote daemons can legitimately differ.
+  # Before accepting a different path, prove the selected configuration belongs
+  # to all five services and to the exact named volumes the new template will use.
+  local candidate="$1" candidate_app="$2" service key destination id expected volume mapping value
+  [[ "$candidate" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || return 1
+  for mapping in \
+    'open-webui WEBUI_SECRET_KEY /app/backend/data' \
+    'postgres POSTGRES_PASSWORD /var/lib/postgresql/data' \
+    'redis REDIS_PASSWORD /data' 'minio MINIO_ROOT_PASSWORD /data' \
+    'searxng SEARXNG_SECRET /var/cache/searxng'; do
+    read -r service key destination <<< "$mapping"
+    id=$(docker ps -aq --filter "label=com.docker.compose.project=$candidate" --filter "label=com.docker.compose.service=$service")
+    [[ -n "$id" && "$id" != *$'\n'* ]] || return 1
+    if [[ "$service" == open-webui ]]; then
+      [[ "$(docker inspect --format '{{.Id}}' "$id")" == "$(docker inspect --format '{{.Id}}' "$candidate_app")" ]] || return 1
+    fi
+    [[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$id")" == "$candidate" ]] || return 1
+    expected=$(read_env "$key" "$ENV_FILE")
+    [[ -n "$expected" && "$(container_env "$id" "$key")" == "$expected" ]] || return 1
+    volume=$(docker inspect --format "{{range .Mounts}}{{if and (eq .Type \"volume\") (eq .Destination \"$destination\")}}{{println .Name}}{{end}}{{end}}" "$id")
+    [[ "$volume" == "${candidate}_$service" ]] || return 1
+    [[ "$(docker volume inspect --format '{{index .Labels "com.docker.compose.volume"}}' "$volume")" == "$service" ]] || return 1
+    owned_volume "$volume" "$candidate" || return 1
+  done
+  for mapping in 'postgres POSTGRES_USER webui' 'postgres POSTGRES_DB webui' 'minio MINIO_ROOT_USER webui-admin'; do
+    read -r service key expected <<< "$mapping"
+    id=$(docker ps -aq --filter "label=com.docker.compose.project=$candidate" --filter "label=com.docker.compose.service=$service")
+    value=$(read_env "$key" "$ENV_FILE")
+    [[ -z "$value" ]] || expected="$value"
+    [[ "$(container_env "$id" "$key")" == "$expected" ]] || return 1
+  done
+}
+
 project=${COMPOSE_PROJECT_NAME:-$(read_env COMPOSE_PROJECT_NAME "$ENV_FILE")}
 if [[ -z "$project" ]]; then
   # Retain legacy names inferred from the old working directory (for example olm).
@@ -114,17 +167,34 @@ if [[ -z "$project" ]]; then
     fi
   done < <(docker ps -aq --filter label=com.docker.compose.service=open-webui)
   project=$(printf '%s' "$candidates" | sed '/^$/d' | sort -u)
+  if [[ -z "$project" ]]; then
+    while IFS= read -r cid; do
+      [[ -n "$cid" ]] || continue
+      name=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$cid")
+      if deployment_matches "$name" "$cid"; then candidates="$candidates$name"$'\n'; fi
+    done < <(docker ps -aq --filter label=com.docker.compose.service=open-webui)
+    project=$(printf '%s' "$candidates" | sed '/^$/d' | sort -u)
+  fi
 fi
-if [[ -z "$project" ]]; then project=nefex-web-ui; fi
+[[ -n "$project" ]] || { echo '未找到与目录、密钥及数据卷匹配的旧项目，请检查 .env 和 COMPOSE_PROJECT_NAME。' >&2; exit 2; }
 [[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo '无法唯一确定旧 Compose 项目名，请检查 COMPOSE_PROJECT_NAME。' >&2; exit 2; }
 compose=(docker compose --project-directory "$ROOT" --env-file "$ENV_FILE" -p "$project" -f "$ROOT/docker-compose.yaml")
 existing_gpu=false
 case "$(read_env NEFEX_INSTALL_GPU "$ENV_FILE")" in true) existing_gpu=true ;; esac
 app_id=$("${compose[@]}" ps -aq open-webui)
 [[ -n "$app_id" && "$app_id" != *$'\n'* ]] || { echo '未找到唯一的旧应用容器，请先完成安装或检查项目名。' >&2; exit 2; }
+[[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$app_id")" == "$project" ]] || {
+  echo '旧应用容器的项目标签与 COMPOSE_PROJECT_NAME 不一致。' >&2; exit 2;
+}
 app_working=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$app_id")
 if [[ -d "$app_working" ]]; then app_working=$(cd -- "$app_working" && pwd -P); fi
-[[ "$app_working" == "$ROOT" ]] || { echo '项目对应的原安装路径与 --install-dir 不一致，请检查项目名和目录。' >&2; exit 2; }
+if [[ "$app_working" != "$ROOT" ]]; then
+  deployment_matches "$project" "$app_id" || {
+    printf '项目 %s 记录的原安装路径：%s\n当前安装路径：%s\n' "$project" "$app_working" "$ROOT" >&2
+    echo '路径不同且密钥或数据卷不匹配，无法确认是同一安装；请检查 .env 和 COMPOSE_PROJECT_NAME。' >&2; exit 2;
+  }
+  printf '已通过服务配置与数据卷核对，沿用项目 %s（原路径：%s）。\n' "$project" "$app_working"
+fi
 if [[ "$(docker inspect --format '{{if .HostConfig.DeviceRequests}}true{{else}}false{{end}}' "$app_id")" == true ]]; then existing_gpu=true; fi
 if [[ "$existing_gpu" == true ]]; then compose+=(-f "$ROOT/docker-compose.gpu.yaml"); fi
 [[ "$gpu" != auto ]] || gpu="$existing_gpu"
@@ -153,19 +223,6 @@ helper_id=$("${compose[@]}" ps -aq minio-init)
 helper=$(docker inspect --format '{{.Image}}' "$helper_id")
 pin_image() {
   docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}{{end}}' "$1"
-}
-owned_volume() {
-  local volume="$1" owner labels consumer
-  owner=$(docker volume inspect --format '{{index .Labels "com.docker.compose.project"}}' "$volume")
-  if [[ "$owner" != "$project" ]]; then
-    # Official images may declare anonymous volumes (SearXNG: /etc/searxng).
-    labels=$(docker volume inspect --format '{{json .Labels}}' "$volume")
-    [[ "$labels" == *'"com.docker.volume.anonymous":'* ]] || return 1
-  fi
-  while IFS= read -r consumer; do
-    [[ -n "$consumer" ]] || continue
-    [[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$consumer")" == "$project" ]] || return 1
-  done < <(docker ps -aq --filter "volume=$volume")
 }
 helper=$(pin_image "$helper")
 docker run --rm --pull never --network none --entrypoint sh "$helper" -ec 'command -v tar >/dev/null; command -v gzip >/dev/null'

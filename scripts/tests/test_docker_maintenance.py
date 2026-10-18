@@ -78,7 +78,7 @@ class MaintenanceTests(unittest.TestCase):
         self.assertIn('COMPOSE_PROJECT_NAME=legacy-project', config)
         self.assertIn('POSTGRES_IMAGE=registry.test/old-postgres-image@sha256:', config)
         self.assertIn('WEBUI_IMAGE=ghcr.io/albert-li-sz/nefex-web-ui@sha256:', config)
-        self.assertEqual((self.root / 'VERSION').read_text().strip(), '0.12.8')
+        self.assertEqual((self.root / 'VERSION').read_text().strip(), '0.12.9')
         self.assertFalse((self.root / 'injected').exists())
         self.assertNotIn('postgres-fixture-secret', result.stdout + result.stderr)
         self.assertEqual(len(self.snapshots()), 1)
@@ -89,7 +89,7 @@ class MaintenanceTests(unittest.TestCase):
         (self.root / 'VERSION').write_text('0.12.4\n')
         result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.12.4')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('v0.12.4 → v0.12.8', result.stdout)
+        self.assertIn('v0.12.4 → v0.12.9', result.stdout)
         self.assertIn('session-fixture-secret', (self.root / '.env').read_text())
 
     def test_update_detects_existing_cuda_mode(self):
@@ -236,6 +236,71 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual((self.root / '.env').read_text(), self.original)
         self.assertFalse(any('stop' in e or e[0] == 'pull' for e in self.events()))
 
+    def test_relocated_installation_keeps_its_existing_compose_project(self):
+        (self.root / 'VERSION').write_text('0.12.8\n')
+        (self.root / '.env').write_text(
+            self.original.replace('v0.12.5', 'v0.12.8') + 'COMPOSE_PROJECT_NAME=legacy-project\n'
+        )
+        result = self.run_maintenance(
+            '--update', '--local', '--non-interactive', FAKE_WORKING_DIR='/original/installation', OLD_VERSION='0.12.8'
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('COMPOSE_PROJECT_NAME=legacy-project', (self.root / '.env').read_text())
+        self.assertEqual(len(self.snapshots()), 1)
+
+    def test_relocated_legacy_installation_infers_project_from_matching_services(self):
+        result = self.run_maintenance(
+            '--update', '--local', '--non-interactive', FAKE_WORKING_DIR='/original/installation'
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('COMPOSE_PROJECT_NAME=legacy-project', (self.root / '.env').read_text())
+
+    def test_relocated_installation_with_different_secrets_is_rejected_before_changes(self):
+        original = self.original + 'COMPOSE_PROJECT_NAME=legacy-project\n'
+        original = original.replace('session-fixture-secret', 'different-session-fixture')
+        (self.root / '.env').write_text(original)
+        result = self.run_maintenance(
+            '--update', '--local', '--non-interactive', FAKE_WORKING_DIR='/original/installation'
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('密钥或数据卷', result.stderr)
+        self.assertEqual((self.root / '.env').read_text(), original)
+        self.assertNotIn('different-session-fixture', result.stdout + result.stderr)
+        self.assertFalse(any('stop' in e or e[0] == 'pull' for e in self.events()))
+
+    def test_relocated_installation_rejects_ambiguous_matching_projects(self):
+        result = self.run_maintenance(
+            '--update', '--local', '--non-interactive', FAKE_WORKING_DIR='/original/installation', AMBIGUOUS_PROJECT='1'
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('COMPOSE_PROJECT_NAME', result.stderr)
+        self.assertFalse(any('stop' in e or e[0] == 'pull' for e in self.events()))
+
+    def test_relocated_installation_rejects_custom_data_volume_names(self):
+        (self.root / '.env').write_text(self.original + 'COMPOSE_PROJECT_NAME=legacy-project\n')
+        result = self.run_maintenance(
+            '--update', '--local', '--non-interactive', FAKE_WORKING_DIR='/original/installation', CUSTOM_VOLUME='1'
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('密钥或数据卷', result.stderr)
+        self.assertFalse(any('stop' in e or e[0] == 'pull' for e in self.events()))
+
+    def test_relocated_installation_rejects_different_database_with_the_same_password(self):
+        original = self.original + 'COMPOSE_PROJECT_NAME=legacy-project\nPOSTGRES_DB=another-database\n'
+        (self.root / '.env').write_text(original)
+        result = self.run_maintenance(
+            '--update', '--local', '--non-interactive', FAKE_WORKING_DIR='/original/installation'
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual((self.root / '.env').read_text(), original)
+        self.assertFalse(any('stop' in e or e[0] == 'pull' for e in self.events()))
+
+    def test_working_directory_symlink_is_canonicalized(self):
+        alias = Path(self.temp.name) / 'linked installation'
+        alias.symlink_to(self.root, target_is_directory=True)
+        result = self.run_maintenance('--update', '--local', '--non-interactive', FAKE_WORKING_DIR=str(alias))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_direct_downgrade_is_rejected(self):
         result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.13.0')
         self.assertNotEqual(result.returncode, 0)
@@ -255,13 +320,13 @@ class MaintenanceTests(unittest.TestCase):
         self.assertFalse(self.calls.exists())
 
     def test_local_target_must_match_requested_version(self):
-        result = self.run_maintenance('--update', '--local', '--to', 'v0.12.9', '--non-interactive')
+        result = self.run_maintenance('--update', '--local', '--to', 'v0.12.10', '--non-interactive')
         self.assertEqual(result.returncode, 2)
         self.assertFalse(any(e[0] == 'pull' for e in self.events()))
 
     def test_same_version_is_noop(self):
-        (self.root / 'VERSION').write_text('0.12.8\n')
-        result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.12.8')
+        (self.root / 'VERSION').write_text('0.12.9\n')
+        result = self.run_maintenance('--update', '--local', '--non-interactive', OLD_VERSION='0.12.9')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any('stop' in e or e[0] == 'pull' for e in self.events()))
         self.assertEqual((self.root / '.env').read_text(), self.original)

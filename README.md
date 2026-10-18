@@ -31,7 +31,7 @@ v0.12.8 起，安装器支持更新、完整备份和回滚。已有配置的终
 ```bash
 ./scripts/install-docker.sh --update
 # 指定版本；自动化执行另加 --non-interactive
-./scripts/install-docker.sh --update --to v0.12.8
+./scripts/install-docker.sh --update --to v0.12.9
 ./scripts/install-docker.sh --backup
 ./scripts/install-docker.sh --list-backups
 ./scripts/install-docker.sh --rollback /完整备份目录
